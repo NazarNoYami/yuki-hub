@@ -1,4 +1,4 @@
--- Yuki Hub v5.0 - TEST 2 (tanpa Section)
+-- Yuki Hub v5.0 - TEST 2 (tanpa Section, tanpa SetAccentColor)
 local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 
 local Window = WindUI:CreateWindow({
@@ -10,8 +10,6 @@ local Window = WindUI:CreateWindow({
     Topbar = { Height = 44, ButtonsType = "Default" },
 })
 
-Window:SetAccentColor(Color3.fromRGB(0, 120, 255))
-
 local Tab = Window:Tab({
     Title = "Test",
     Icon = "solar:home-2-bold-duotone",
@@ -19,7 +17,6 @@ local Tab = Window:Tab({
     Border = true,
 })
 
--- LANGSUNG ke Tab, tanpa Section
 Tab:Toggle({ Title = "Test Toggle", Callback = function(s) print("Toggle:", s) end })
 Tab:Space()
 Tab:Button({ Title = "Test Button", Callback = function() print("Button clicked") end })
