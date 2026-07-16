@@ -79,14 +79,73 @@ local function GetAimPoint(orig, trg, vel, grav)
 end
 
 -- ESP
-local espLineObj = nil; local espLineOn = false; local projArcObj = nil; local projArcOn = false
-local function UpdateESPLine(t)
-    if not espLineOn or not t then if espLineObj then espLineObj.Visible=false end; return end
-    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then if espLineObj then espLineObj.Visible=false end; return end
-    local tp=GetTargetPos(t); if not tp then if espLineObj then espLineObj.Visible=false end; return end
-    local mp=LocalPlayer.Character.HumanoidRootPart.Position; local from,_=Camera:WorldToViewportPoint(mp); local to,_=Camera:WorldToViewportPoint(tp)
-    if not espLineObj then espLineObj=Drawing.new("Line"); espLineObj.Thickness=2; espLineObj.Color=Color3.fromRGB(0,255,100); espLineObj.Transparency=0.5 end
-    espLineObj.From=Vector2.new(from.X,from.Y); espLineObj.To=Vector2.new(to.X,to.Y); espLineObj.Visible=true
+local espLineOn = false; local projArcObj = nil; local projArcOn = false
+local espLineColor = Color3.fromRGB(0, 255, 100)
+local espLineMode = "Single"  -- "Single" or "All"
+local espLineOrigin = "Character"  -- "Character" or "Top Screen"
+local espLineObjects = {}  -- table of line objects for multi-target
+
+local function UpdateESPLineMulti()
+    if not espLineOn then
+        for _, obj in pairs(espLineObjects) do obj.Visible = false end
+        return
+    end
+
+    local myPos = nil
+    local myScreenPos = nil
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        myPos = LocalPlayer.Character.HumanoidRootPart.Position
+        myScreenPos, _ = Camera:WorldToViewportPoint(myPos)
+    end
+
+    -- Determine origin point
+    local originPoint
+    if espLineOrigin == "Top Screen" then
+        originPoint = Vector2.new(Camera.ViewportSize.X / 2, 0)
+    elseif myScreenPos then
+        originPoint = Vector2.new(myScreenPos.X, myScreenPos.Y)
+    else
+        for _, obj in pairs(espLineObjects) do obj.Visible = false end
+        return
+    end
+
+    -- Get list of targets
+    local targets = {}
+    if espLineMode == "Single" then
+        local t = projTarget or GetClosestPlayer(360)
+        if t then table.insert(targets, t) end
+    else -- All players
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+                table.insert(targets, p)
+            end
+        end
+    end
+
+    -- Create/destroy line objects as needed
+    for i = #targets + 1, #espLineObjects do
+        espLineObjects[i].Visible = false
+    end
+
+    for i, target in ipairs(targets) do
+        if not espLineObjects[i] then
+            espLineObjects[i] = Drawing.new("Line")
+            espLineObjects[i].Thickness = 2
+            espLineObjects[i].Color = espLineColor
+            espLineObjects[i].Transparency = 0.6
+        end
+        local obj = espLineObjects[i]
+        local tp = GetTargetPos(target)
+        if tp then
+            local to, _ = Camera:WorldToViewportPoint(tp)
+            obj.From = originPoint
+            obj.To = Vector2.new(to.X, to.Y)
+            obj.Visible = true
+            obj.Color = espLineColor
+        else
+            obj.Visible = false
+        end
+    end
 end
 local function DrawArc(orig, trg, vel, grav)
     if not projArcObj then projArcObj=Drawing.new("Line"); projArcObj.Thickness=1; projArcObj.Color=Color3.fromRGB(255,200,50); projArcObj.Transparency=0.3 end
@@ -156,7 +215,13 @@ ESPVis:Toggle({ Title = "ESP Box", Callback = function(s)
     else for _,o in pairs(ESPObjs) do o.Box.Visible=false; o.Name.Visible=false end end
 end})
 ESPVis:Space()
-ESPVis:Toggle({ Title = "ESP Line", Desc = "Green line to locked target", Callback = function(s) espLineOn = s; if not s and espLineObj then espLineObj.Visible=false end end })
+ESPVis:Toggle({ Title = "ESP Line", Desc = "Line to players", Callback = function(s) espLineOn = s; if not s then for _,o in pairs(espLineObjects) do o.Visible=false end end end })
+ESPVis:Space()
+ESPVis:Colorpicker({ Title = "Line Color", Default = espLineColor, Callback = function(c) espLineColor = c end })
+ESPVis:Space()
+ESPVis:Dropdown({ Title = "Line Mode", Values = {"Single", "All Players"}, Value = 1, Callback = function(s) espLineMode = (s == "All Players") and "All" or "Single" end })
+ESPVis:Space()
+ESPVis:Dropdown({ Title = "Line Origin", Values = {"Character", "Top Screen"}, Value = 1, Callback = function(s) espLineOrigin = s end })
 ESPVis:Space()
 ESPVis:Toggle({ Title = "Projectile Arc", Desc = "Trajectory prediction", Callback = function(s) projArcOn = s; if not s and projArcObj then projArcObj.Visible=false end end })
 
@@ -239,8 +304,7 @@ CreditSect:Button({ Title = "Yuki Hub v4.2", Desc = "Made for Tuan | WindUI | De
 RunService.RenderStepped:Connect(function()
     -- ESP Line
     if espLineOn then
-        local t = projTarget or GetClosestPlayer(360)
-        UpdateESPLine(t)
+        UpdateESPLineMulti()
     end
     -- Projectile Arc
     if projArcOn and projTarget and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
