@@ -36,6 +36,15 @@ Window:Tag({ Title = "v5.0", Icon = "github", Color = Color3.fromHex("#1c1c1c"),
 -- Set blue accent
 Window:SetAccentColor(Color3.fromRGB(0, 120, 255))
 
+-- Try to load Minecraft-like font
+local minecraftFont = nil
+pcall(function()
+    minecraftFont = Font.fromUrl("https://raw.githubusercontent.com/Trioplane/crafted-font/main/build/crafted.otf")
+end)
+if minecraftFont then
+    Window:SetFont(minecraftFont)
+end
+
 -- Colors
 local Blue = Color3.fromHex("#257AF7"); local Green = Color3.fromHex("#10C550"); local Red = Color3.fromHex("#EF4F1D")
 local Yellow = Color3.fromHex("#ECA201"); local Purple = Color3.fromHex("#7775F2"); local Grey = Color3.fromHex("#83889E")
