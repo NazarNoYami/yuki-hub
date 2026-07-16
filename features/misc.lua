@@ -221,12 +221,17 @@ YH.RunService.RenderStepped:Connect(function()
                     warn("[ASC] CLICK! Line=" .. string.format("%.1f", lRot) .. " Goal=" .. string.format("%.1f", gRot))
                     local check = asSG:FindFirstChild("Check", true)
                     if check and check:IsA("GuiObject") then
-                        local pos = check.AbsolutePosition + check.AbsoluteSize / 2
-                        YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
-                        YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
-                        warn("[ASC] Click at Check frame: " .. string.format("%.0f,%.0f", pos.X, pos.Y))
+                        warn("[ASC] Firing events on " .. check:GetFullName())
+                        pcall(function() check.Activated:Fire() end)
+                        pcall(function() check.MouseButton1Click:Fire() end)
+                        pcall(function() check.MouseButton1Down:Fire() end)
+                        pcall(function() check.MouseButton1Up:Fire() end)
+                        local input = Instance.new("InputObject")
+                        input.UserInputType = Enum.UserInputType.MouseButton1
+                        pcall(function() check.InputBegan:Fire(input, false) end)
+                        pcall(function() check.InputEnded:Fire(input, false) end)
                     else
-                        warn("[ASC] Check frame not found")
+                        warn("[ASC] Check frame not found!")
                     end
                 elseif diff > 40 then
                     if asState ~= 0 then asState = 0 end
