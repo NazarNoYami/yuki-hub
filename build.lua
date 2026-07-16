@@ -802,66 +802,51 @@ US:Space()
 US:Toggle({ Title = "Auto Skill Check", Desc = "Auto-complete generator minigame", Callback = function(s) YH.asOn = s end })
 US:Space()
 
--- Click Scanner
+-- Click Scanner (only fires when skill check is active)
 local clickScanLogs = {"=== Click Scanner ==="}
 local clickScanOn = false
 local clickScanCon = nil
 
-US:Toggle({ Title = "Click Scanner", Desc = "Record what GUI you click during minigame", Callback = function(s)
+US:Toggle({ Title = "Click Scanner", Desc = "Record what you click during skill check", Callback = function(s)
     clickScanOn = s
     if s then
         table.insert(clickScanLogs, "--- Started ---")
-        table.insert(clickScanLogs, "Click the skill check button manually to see what it is!")
         if clickScanCon then clickScanCon:Disconnect() end
         local wasDown = false
         clickScanCon = YH.RunService.RenderStepped:Connect(function()
+            local skSG = nil
+            for _, gui in pairs({game:GetService("CoreGui"), YH.LocalPlayer:FindFirstChildOfClass("PlayerGui")}) do
+                if not gui then continue end
+                skSG = gui:FindFirstChild("SkillCheckPromptGui", false)
+                if skSG then break end
+            end
+            if not skSG or not skSG.Enabled then wasDown = false; return end
+            local goal = skSG:FindFirstChild("Goal", true)
+            if not goal or goal.Rotation == 0 then wasDown = false; return end
             local down = YH.UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
             if down and not wasDown then
-                local x = YH.Mouse.X
-                local y = YH.Mouse.Y
-                table.insert(clickScanLogs, "--- Click " .. string.format("%.0f,%.0f", x, y) .. " ---")
-                local hit = {}
-                for _, gui in pairs({game:GetService("CoreGui"), YH.LocalPlayer:FindFirstChildOfClass("PlayerGui")}) do
-                    if not gui then continue end
-                    for _, sg in pairs(gui:GetChildren()) do
-                        if not sg:IsA("ScreenGui") or not sg.Enabled then continue end
-                        for _, v in pairs(sg:GetDescendants()) do
-                            if v:IsA("GuiObject") and v.Visible then
-                                local ok, pos, size = pcall(function() return v.AbsolutePosition, v.AbsoluteSize end)
-                                if ok and pos and size and size.X > 0 and size.Y > 0 then
-                                    if x >= pos.X and x <= pos.X + size.X and y >= pos.Y and y <= pos.Y + size.Y then
-                                        table.insert(hit, v)
-                                    end
-                                end
+                local x = YH.Mouse.X; local y = YH.Mouse.Y
+                table.insert(clickScanLogs, "--- Click " .. string.format("%.0f,%.0f", x, y) .. " (Goal=" .. string.format("%.0f", goal.Rotation) .. ") ---")
+                local hit = false
+                for _, v in pairs(skSG:GetDescendants()) do
+                    if v:IsA("GuiObject") and v.Visible then
+                        local ok, pos, size = pcall(function() return v.AbsolutePosition, v.AbsoluteSize end)
+                        if ok and pos and size and size.X > 0 and size.Y > 0 then
+                            if x >= pos.X and x <= pos.X + size.X and y >= pos.Y and y <= pos.Y + size.Y then
+                                table.insert(clickScanLogs, "  [HIT] " .. v:GetFullName() .. " (" .. v.ClassName .. ")")
+                                hit = true
                             end
                         end
                     end
                 end
-                if #hit > 0 then
-                    for _, v in pairs(hit) do
-                        table.insert(clickScanLogs, "  [HIT] " .. v:GetFullName() .. " (" .. v.ClassName .. ")")
-                        local sg = v:FindFirstAncestorOfClass("ScreenGui")
-                        if sg then
-                            table.insert(clickScanLogs, "    Gui: " .. sg.Name)
-                            table.insert(clickScanLogs, "    Children:")
-                            for _, c in pairs(sg:GetChildren()) do
-                                local info = c.Name .. " (" .. c.ClassName .. ")"
-                                local vis = pcall(function() return c.Visible end) and tostring(c.Visible) or "?"
-                                table.insert(clickScanLogs, "      " .. info .. " vis=" .. vis)
-                            end
-                        end
-                    end
-                else
-                    table.insert(clickScanLogs, "  No GUI hit")
-                end
+                if not hit then table.insert(clickScanLogs, "  No hit in SkillCheckGui") end
             end
             wasDown = down
         end)
     else
         if clickScanCon then clickScanCon:Disconnect(); clickScanCon = nil end
         table.insert(clickScanLogs, "--- Stopped ---")
-        local ok, err = pcall(function() writefile("yuki_click_scan_" .. tostring(math.floor(tick())) .. ".txt", table.concat(clickScanLogs, "\n")) end)
-        if ok then warn("Click scan saved to file!") else warn("writefile failed: " .. tostring(err)) end
+        pcall(function() writefile("yuki_click_scan_" .. tostring(math.floor(tick())) .. ".txt", table.concat(clickScanLogs, "\n")) end)
     end
 end })
 
