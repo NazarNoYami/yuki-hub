@@ -916,29 +916,40 @@ YH.RunService.RenderStepped:Connect(function()
                     if asState == 0 then
                         asState = 1
                         warn("[ASC] CLICK! Line=" .. string.format("%.1f", lRot) .. " Goal=" .. string.format("%.1f", gRot))
-                        -- Method 1: Fire Activated on all GuiObjects
+                        -- Jump method (most common for DBD skill checks)
+                        if YH.LocalPlayer.Character and YH.LocalPlayer.Character:FindFirstChild("Humanoid") then
+                            YH.LocalPlayer.Character.Humanoid.Jump = true
+                            warn("[ASC] Jump triggered")
+                        end
+                        -- ContextActionService
+                        pcall(function()
+                            local CAS = game:GetService("ContextActionService")
+                            for _, name in pairs({"SkillCheck","skillCheck","Generator","generator","Interact","Action","Use","Repair","E"}) do
+                                local ok = pcall(function() CAS:CallFunction(name, Enum.UserInputType.Keyboard, Enum.KeyCode.Space) end)
+                                if ok then warn("[ASC] CAS fired: " .. name) end
+                            end
+                        end)
+                        -- Fire Activated on all GuiObjects
                         for _, v in pairs(asSG:GetDescendants()) do
                             if v:IsA("GuiObject") then
                                 pcall(function() v.Activated:Fire() end)
                             end
                         end
-                        -- Method 2: VirtualInputManager at GUI center
+                        -- VirtualInputManager at GUI center + screen center
                         local pos = asSG.AbsolutePosition + asSG.AbsoluteSize / 2
+                        local vs = YH.Camera.ViewportSize
                         YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
                         YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
-                        -- Method 3: Also try screen center
-                        local vs = YH.Camera.ViewportSize
                         YH.VirtualInputManager:SendMouseButtonEvent(vs.X/2, vs.Y/2, 0, true, game, 1)
                         YH.VirtualInputManager:SendMouseButtonEvent(vs.X/2, vs.Y/2, 0, false, game, 1)
-                        -- Method 4: Try "E" key
-                        YH.VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                        YH.VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                        -- Method 5: Try Space key
+                        -- Space + E keys
                         YH.VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
                         YH.VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-                        -- Method 6: mouse1click if available
+                        YH.VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                        YH.VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                        -- mouse1click
                         pcall(mouse1click)
-                        warn("[ASC] All click methods fired")
+                        warn("[ASC] All methods fired")
                         asState = 2
                     end
                 elseif diff > 40 then
