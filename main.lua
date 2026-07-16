@@ -10,6 +10,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local HttpService = game:GetService("HttpService")
+local Lighting = game:GetService("Lighting")
 
 local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
@@ -100,6 +101,19 @@ end
 -- Basic Aimbot
 local aimOn = false; local aimSmooth = 1; local aimFOV = 90
 
+-- Bright Mode
+local brightOn = false; local brightLevel = 1
+local originalLighting = {
+    Ambient = Lighting.Ambient,
+    Brightness = Lighting.Brightness,
+    ClockTime = Lighting.ClockTime,
+    FogEnd = Lighting.FogEnd,
+    GlobalShadows = Lighting.GlobalShadows,
+    OutdoorAmbient = Lighting.OutdoorAmbient,
+    ColorShift_Top = Lighting.ColorShift_Top,
+    ColorShift_Bottom = Lighting.ColorShift_Bottom,
+}
+
 -- ============== TABS ==============
 -- Main Tab
 local MainTab = Window:Tab({ Title = "Main", Icon = "solar:home-2-bold", IconColor = Grey, Border = true })
@@ -179,6 +193,40 @@ MiscSect:Space()
 MiscSect:Button({ Title = "Anti AFK", Desc = "Prevent auto-kick", Callback = function() LocalPlayer.Idled:Connect(function() VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,1); task.wait(0.1); VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,1) end) end })
 MiscSect:Space()
 MiscSect:Slider({ Title = "FPS Cap", Width = 200, Value = { Min=15, Max=360, Default=60 }, Step = 1, Callback = function(v) setfpscap(v) end })
+MiscSect:Space()
+
+local BrightSect = MiscTab:Section({ Title = "Bright Mode" })
+BrightSect:Toggle({ Title = "Bright Mode", Desc = "Make dark maps visible", Callback = function(s)
+    brightOn = s
+    if s then
+        local b = brightLevel * 2
+        Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+        Lighting.Brightness = b
+        Lighting.ClockTime = 12
+        Lighting.FogEnd = 100000
+        Lighting.GlobalShadows = false
+        Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+        Lighting.ColorShift_Top = Color3.fromRGB(255, 255, 255)
+        Lighting.ColorShift_Bottom = Color3.fromRGB(255, 255, 255)
+    else
+        Lighting.Ambient = originalLighting.Ambient
+        Lighting.Brightness = originalLighting.Brightness
+        Lighting.ClockTime = originalLighting.ClockTime
+        Lighting.FogEnd = originalLighting.FogEnd
+        Lighting.GlobalShadows = originalLighting.GlobalShadows
+        Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
+        Lighting.ColorShift_Top = originalLighting.ColorShift_Top
+        Lighting.ColorShift_Bottom = originalLighting.ColorShift_Bottom
+    end
+end })
+BrightSect:Space()
+BrightSect:Slider({ Title = "Brightness Level", Width = 200, Value = { Min=0.5, Max=5, Default=1 }, Step = 0.1, Callback = function(v)
+    brightLevel = v
+    if brightOn then
+        Lighting.Brightness = v * 2
+    end
+end })
+
 MiscSect:Space()
 MiscSect:Button({ Title = "Infinite Yield", Desc = "Admin commands", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))() end })
 
