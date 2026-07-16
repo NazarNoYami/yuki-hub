@@ -26,7 +26,6 @@ local Window = WindUI:CreateWindow({
     Folder = "YukiHub",
     Icon = "solar:home-2-bold-duotone",
     NewElements = true, HideSearchBar = false,
-    Theme = "Ocean",
     OpenButton = { Title = "Open Yuki Hub", CornerRadius = UDim.new(1,0), Enabled = true, Draggable = true, Scale = 0.5 },
     Topbar = { Height = 44, ButtonsType = "Default" },
 })
@@ -35,15 +34,6 @@ Window:Tag({ Title = "v5.0", Icon = "github", Color = Color3.fromHex("#1c1c1c"),
 
 -- Set blue accent
 Window:SetAccentColor(Color3.fromRGB(0, 120, 255))
-
--- Try to load Minecraft-like font
-local minecraftFont = nil
-pcall(function()
-    minecraftFont = Font.fromUrl("https://raw.githubusercontent.com/Trioplane/crafted-font/main/build/crafted.otf")
-end)
-if minecraftFont then
-    Window:SetFont(minecraftFont)
-end
 
 -- Colors
 local Blue = Color3.fromHex("#257AF7"); local Green = Color3.fromHex("#10C550"); local Red = Color3.fromHex("#EF4F1D")
