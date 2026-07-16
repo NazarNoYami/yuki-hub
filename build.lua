@@ -877,17 +877,24 @@ YH.RunService.RenderStepped:Connect(function()
     -- Auto Skill Check
     if YH.asOn then
         if not asSG or not asSG.Parent then
+            if asSG then warn("[ASC] Minigame GUI hilang") end
             asSG = nil; asState = 0; asPrevRot = nil
             local plrGui = YH.LocalPlayer:FindFirstChildOfClass("PlayerGui")
             for _, gui in pairs({game:GetService("CoreGui"), plrGui}) do
                 if not gui then continue end
                 asSG = gui:FindFirstChild("SkillCheckPromptGui", false)
-                if asSG then break end
+                if asSG then warn("[ASC] Minigame terdeteksi!") end
             end
         end
         if asSG and asSG.Enabled then
-            if not asLine or not asLine.Parent then asLine = asSG:FindFirstChild("Line", true) end
-            if not asGoal or not asGoal.Parent then asGoal = asSG:FindFirstChild("Goal", true) end
+            if not asLine or not asLine.Parent then
+                asLine = asSG:FindFirstChild("Line", true)
+                if asLine then warn("[ASC] Jarum (Line) ditemukan") end
+            end
+            if not asGoal or not asGoal.Parent then
+                asGoal = asSG:FindFirstChild("Goal", true)
+                if asGoal then warn("[ASC] Target (Goal) ditemukan") end
+            end
             if asLine and asGoal and asGoal.Rotation ~= 0 then
                 local lRot = asLine.Rotation % 360
                 local gRot = asGoal.Rotation
@@ -900,6 +907,7 @@ YH.RunService.RenderStepped:Connect(function()
                 if inZone then
                     if asState == 0 then
                         asState = 1
+                        warn("[ASC] CLICK! Line=" .. string.format("%.1f", lRot) .. " Goal=" .. string.format("%.1f", gRot))
                         local pf = asLine:FindFirstAncestorOfClass("Frame") or asLine.Parent
                         if pf:IsA("GuiObject") then
                             local pos = pf.AbsolutePosition + pf.AbsoluteSize / 2
@@ -914,10 +922,12 @@ YH.RunService.RenderStepped:Connect(function()
                         end
                     end
                 elseif diff > 40 then
+                    if asState ~= 0 then warn("[ASC] Selesai, reset") end
                     asState = 0
                 end
                 asPrevRot = lRot
             else
+                if asState ~= 0 then warn("[ASC] Minigame selesai") end
                 asState = 0; asPrevRot = nil
             end
         end
