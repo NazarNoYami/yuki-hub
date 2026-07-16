@@ -62,24 +62,48 @@ US:Space()
 -- Auto Skill Check
 US:Toggle({ Title = "Auto Skill Check", Desc = "Auto-complete generator minigame", Callback = function(s) YH.asOn = s end })
 US:Space()
-US:Button({ Title = "Scan GUI", Desc = "Print all GUI names to console", Callback = function()
-    local seen = {}
-    for _, gui in pairs({game:GetService("CoreGui"), YH.LocalPlayer:FindFirstChildOfClass("PlayerGui")}) do
-        if not gui then continue end
-        for _, sg in pairs(gui:GetChildren()) do
-            if sg:IsA("ScreenGui") and sg.Enabled then
-                print("--- " .. sg.Name .. " ---")
-                for _, v in pairs(sg:GetDescendants()) do
-                    if (v:IsA("Frame") or v:IsA("ImageLabel") or v:IsA("ImageButton") or v:IsA("TextButton") or v:IsA("TextLabel")) and not seen[v] then
-                        seen[v] = true
-                            local ok, rot = pcall(function() return v.Rotation end)
-                            print("  " .. v.Name .. " (" .. v.ClassName .. ") rot=" .. (ok and tostring(rot) or "?"))
+
+-- Minigame Scanner
+local scanLogs = {"=== Minigame Scanner ==="}
+local scanRunning = false
+local scanCon = nil
+local scanLastRot = {}
+
+US:Toggle({ Title = "Scanner", Desc = "Record rotating GUI elements", Callback = function(s)
+    scanRunning = s
+    if s then
+        table.insert(scanLogs, "--- Started ---")
+        if scanCon then scanCon:Disconnect() end
+        scanCon = YH.RunService.Heartbeat:Connect(function()
+            for _, gui in pairs({game:GetService("CoreGui"), YH.LocalPlayer:FindFirstChildOfClass("PlayerGui")}) do
+                if not gui then continue end
+                for _, sg in pairs(gui:GetChildren()) do
+                    if not sg:IsA("ScreenGui") or not sg.Enabled then continue end
+                    for _, v in pairs(sg:GetDescendants()) do
+                        if not v:IsA("GuiObject") then continue end
+                        local ok, rot = pcall(function() return v.Rotation end)
+                        if not ok then continue end
+                        local key = v:GetFullName()
+                        local prev = scanLastRot[key]
+                        if prev and prev ~= rot and math.abs(rot - prev) > 0.5 and math.abs(rot - prev) < 180 then
+                            table.insert(scanLogs, "[ROT] " .. v.Name .. " rot=" .. string.format("%.1f", rot) .. " (" .. sg.Name .. ")")
+                        end
+                        scanLastRot[key] = rot
                     end
                 end
             end
-        end
+        end)
+    else
+        if scanCon then scanCon:Disconnect(); scanCon = nil end
+        table.insert(scanLogs, "--- Stopped ---")
+        local ok, err = pcall(function() writefile("yuki_scan_" .. tostring(math.floor(tick())) .. ".txt", table.concat(scanLogs, "\n")) end)
+        if ok then warn("Scanner saved to file") else warn("writefile failed: " .. tostring(err)) end
     end
-    print("--- Scan done ---")
+end })
+US:Space()
+US:Button({ Title = "Copy Scan Log", Callback = function()
+    local ok, err = pcall(function() setclipboard(table.concat(scanLogs, "\n")) end)
+    if ok then warn("Scan log copied!") else warn("setclipboard failed: " .. tostring(err)) end
 end })
 
 -- Auto Skill Check state
