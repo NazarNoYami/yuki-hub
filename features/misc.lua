@@ -144,17 +144,25 @@ YH.RunService.RenderStepped:Connect(function()
             for _, gui in pairs({game:GetService("CoreGui"), plrGui}) do
                 if not gui then continue end
                 asSG = gui:FindFirstChild("SkillCheckPromptGui", false)
-                if asSG then warn("[ASC] Minigame terdeteksi!") end
+                if asSG then
+                    warn("[ASC] Minigame terdeteksi!")
+                    -- Print full structure for debugging
+                    for _, v in pairs(asSG:GetDescendants()) do
+                        if v:IsA("GuiObject") then
+                            warn("  " .. v:GetFullName() .. " (" .. v.ClassName .. ")")
+                        end
+                    end
+                end
             end
         end
         if asSG and asSG.Enabled then
             if not asLine or not asLine.Parent then
                 asLine = asSG:FindFirstChild("Line", true)
-                if asLine then warn("[ASC] Jarum (Line) ditemukan") end
+                if asLine then warn("[ASC] Jarum (Line) ditemukan cls=" .. asLine.ClassName) end
             end
             if not asGoal or not asGoal.Parent then
                 asGoal = asSG:FindFirstChild("Goal", true)
-                if asGoal then warn("[ASC] Target (Goal) ditemukan") end
+                if asGoal then warn("[ASC] Target (Goal) ditemukan cls=" .. asGoal.ClassName) end
             end
             if asLine and asGoal and asGoal.Rotation ~= 0 then
                 local lRot = asLine.Rotation % 360
@@ -169,18 +177,25 @@ YH.RunService.RenderStepped:Connect(function()
                     if asState == 0 then
                         asState = 1
                         warn("[ASC] CLICK! Line=" .. string.format("%.1f", lRot) .. " Goal=" .. string.format("%.1f", gRot))
-                        local btn = asSG:FindFirstChildWhichIsA("ImageButton") or asSG:FindFirstChildWhichIsA("TextButton") or asSG:FindFirstChildWhichIsA("GuiButton")
+                        -- Try all possible click methods
+                        local btn = asSG:FindFirstChildWhichIsA("GuiButton")
+                        if not btn then
+                            for _, v in pairs(asSG:GetDescendants()) do
+                                if v:IsA("GuiButton") then btn = v; break end
+                            end
+                        end
                         if btn then
-                            warn("[ASC] Found button: " .. btn.Name)
+                            warn("[ASC] Button found: " .. btn:GetFullName() .. " (" .. btn.ClassName .. ")")
                             pcall(function() btn:Click() end)
                             pcall(function() btn.MouseButton1Click:Fire() end)
                         else
-                            warn("[ASC] No button found, trying direct click")
-                            local pf = asLine:FindFirstAncestorOfClass("Frame") or asLine.Parent
-                            if pf:IsA("GuiObject") then
-                                local pos = pf.AbsolutePosition + pf.AbsoluteSize / 2
-                                YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
-                                YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
+                            warn("[ASC] No button in GUI")
+                            -- Try clicking on the skill check frame directly
+                            for _, v in pairs(asSG:GetDescendants()) do
+                                if v:IsA("ImageButton") or v:IsA("TextButton") then
+                                    pcall(function() v:Click() end)
+                                    pcall(function() v.MouseButton1Click:Fire() end)
+                                end
                             end
                         end
                         asState = 2
@@ -191,7 +206,7 @@ YH.RunService.RenderStepped:Connect(function()
                 end
                 asPrevRot = lRot
             else
-                if asState ~= 0 then warn("[ASC] Minigame selesai") end
+                if asState ~= 0 then warn("[ASC] Minigame selesai (goal=0)") end
                 asState = 0; asPrevRot = nil
             end
         end
