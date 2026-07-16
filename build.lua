@@ -813,12 +813,13 @@ US:Toggle({ Title = "Click Scanner", Desc = "Record what GUI you click during mi
         table.insert(clickScanLogs, "--- Started ---")
         table.insert(clickScanLogs, "Click the skill check button manually to see what it is!")
         if clickScanCon then clickScanCon:Disconnect() end
-        clickScanCon = YH.UserInputService.InputBegan:Connect(function(input, gp)
-            if gp then return end
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                local x, y = input.Position.X, input.Position.Y
-                table.insert(clickScanLogs, "--- Click at " .. string.format("%.0f,%.0f", x, y) .. " ---")
-                -- Scan all GUI for hit at position
+        local wasDown = false
+        clickScanCon = YH.RunService.RenderStepped:Connect(function()
+            local down = YH.UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+            if down and not wasDown then
+                local x = YH.Mouse.X
+                local y = YH.Mouse.Y
+                table.insert(clickScanLogs, "--- Click " .. string.format("%.0f,%.0f", x, y) .. " ---")
                 local hit = {}
                 for _, gui in pairs({game:GetService("CoreGui"), YH.LocalPlayer:FindFirstChildOfClass("PlayerGui")}) do
                     if not gui then continue end
@@ -841,19 +842,20 @@ US:Toggle({ Title = "Click Scanner", Desc = "Record what GUI you click during mi
                         table.insert(clickScanLogs, "  [HIT] " .. v:GetFullName() .. " (" .. v.ClassName .. ")")
                         local sg = v:FindFirstAncestorOfClass("ScreenGui")
                         if sg then
-                            table.insert(clickScanLogs, "    ParentGui: " .. sg.Name)
+                            table.insert(clickScanLogs, "    Gui: " .. sg.Name)
                             table.insert(clickScanLogs, "    Children:")
                             for _, c in pairs(sg:GetChildren()) do
                                 local info = c.Name .. " (" .. c.ClassName .. ")"
                                 local vis = pcall(function() return c.Visible end) and tostring(c.Visible) or "?"
-                                table.insert(clickScanLogs, "      " .. info .. " visible=" .. vis)
+                                table.insert(clickScanLogs, "      " .. info .. " vis=" .. vis)
                             end
                         end
                     end
                 else
-                    table.insert(clickScanLogs, "  No GUI objects at click position")
+                    table.insert(clickScanLogs, "  No GUI hit")
                 end
             end
+            wasDown = down
         end)
     else
         if clickScanCon then clickScanCon:Disconnect(); clickScanCon = nil end
