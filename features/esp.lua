@@ -112,7 +112,7 @@ local function ScanObjects()
         local ln = obj.Name:lower()
 
         if obj:IsA("Model") then
-            if ln:find("generator") then table.insert(cachedGens, obj)
+            if ln:find("generator") or obj:GetAttribute("RepairProgress") ~= nil then table.insert(cachedGens, obj)
             elseif ln:find("hook") then table.insert(cachedHooks, obj)
             elseif ln:find("pallet") then table.insert(cachedPallets, obj)
             elseif ln:find("gate") or ln:find("exit") then table.insert(cachedGates, obj) end
@@ -410,6 +410,9 @@ YH.RunService.RenderStepped:Connect(function(dt)
         for _, obj in pairs(cachedGens) do
             local att = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
             if not att then continue end
+            local progress = obj:GetAttribute("RepairProgress") or 0
+            local repairing = obj:GetAttribute("PlayersRepairingCount") or 0
+            local full = progress >= 100
             if not genH[obj] then
                 local hl = Instance.new("Highlight")
                 hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
@@ -417,19 +420,35 @@ YH.RunService.RenderStepped:Connect(function(dt)
                 hl.FillColor = Color3.new(1, 1, 1); hl.OutlineColor = Color3.new(1, 1, 1)
                 hl.Parent = YH.Camera; genH[obj] = hl
                 local bill = Instance.new("BillboardGui")
-                bill.Size = UDim2.new(0, 150, 0, 30)
-                bill.StudsOffset = Vector3.new(0, 2.5, 0)
+                bill.Size = UDim2.new(0, 170, 0, 38)
+                bill.StudsOffset = Vector3.new(0, 4, 0)
                 bill.AlwaysOnTop = true; bill.Parent = YH.Camera
                 local txt = Instance.new("TextLabel")
                 txt.Size = UDim2.new(1, 0, 1, 0); txt.BackgroundTransparency = 1
                 txt.Font = Enum.Font.SourceSansSemibold; txt.TextSize = 14
                 txt.TextStrokeTransparency = 0.4; txt.TextStrokeColor3 = Color3.new(0, 0, 0)
                 txt.TextXAlignment = Enum.TextXAlignment.Center
-                txt.TextColor3 = Color3.fromRGB(200, 200, 255)
-                txt.Text = "Generator"; txt.Parent = bill; genL[obj] = txt
+                txt.Parent = bill; genL[obj] = txt
             end
             genH[obj].Adornee = obj
             genL[obj].Parent.Adornee = att
+            local txt = genL[obj]
+            if full then
+                txt.Text = "Generator\n100.0%"
+                txt.TextColor3 = Color3.fromRGB(0, 255, 0)
+                genH[obj].FillColor = Color3.fromRGB(0, 255, 0)
+                genH[obj].OutlineColor = Color3.fromRGB(0, 255, 0)
+            else
+                local g = math.clamp(progress / 100, 0, 1)
+                txt.TextColor3 = Color3.new(1 - g * 0.7, 1, 1 - g * 0.7)
+                if repairing > 0 then
+                    txt.Text = string.format("Generator\n%.1f%% [%d]", progress, repairing)
+                else
+                    txt.Text = string.format("Generator\n%.1f%%", progress)
+                end
+                genH[obj].FillColor = Color3.new(1, 1, 1)
+                genH[obj].OutlineColor = Color3.new(1, 1, 1)
+            end
         end
     end
     if hookOn then
