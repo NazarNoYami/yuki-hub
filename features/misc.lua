@@ -63,13 +63,75 @@ US:Space()
 US:Toggle({ Title = "Auto Skill Check", Desc = "Auto-complete generator minigame", Callback = function(s) YH.asOn = s end })
 US:Space()
 
--- Minigame Scanner
-local scanLogs = {"=== Minigame Scanner ==="}
+-- Click Scanner
+local clickScanLogs = {"=== Click Scanner ==="}
+local clickScanOn = false
+local clickScanCon = nil
+
+US:Toggle({ Title = "Click Scanner", Desc = "Record what GUI you click during minigame", Callback = function(s)
+    clickScanOn = s
+    if s then
+        table.insert(clickScanLogs, "--- Started ---")
+        table.insert(clickScanLogs, "Click the skill check button manually to see what it is!")
+        if clickScanCon then clickScanCon:Disconnect() end
+        clickScanCon = YH.UserInputService.InputBegan:Connect(function(input, gp)
+            if gp then return end
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                local x, y = input.Position.X, input.Position.Y
+                table.insert(clickScanLogs, "--- Click at " .. string.format("%.0f,%.0f", x, y) .. " ---")
+                -- Scan all GUI for hit at position
+                local hit = {}
+                for _, gui in pairs({game:GetService("CoreGui"), YH.LocalPlayer:FindFirstChildOfClass("PlayerGui")}) do
+                    if not gui then continue end
+                    for _, sg in pairs(gui:GetChildren()) do
+                        if not sg:IsA("ScreenGui") or not sg.Enabled then continue end
+                        for _, v in pairs(sg:GetDescendants()) do
+                            if v:IsA("GuiObject") and v.Visible then
+                                local ok, pos, size = pcall(function() return v.AbsolutePosition, v.AbsoluteSize end)
+                                if ok and pos and size and size.X > 0 and size.Y > 0 then
+                                    if x >= pos.X and x <= pos.X + size.X and y >= pos.Y and y <= pos.Y + size.Y then
+                                        table.insert(hit, v)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+                if #hit > 0 then
+                    for _, v in pairs(hit) do
+                        table.insert(clickScanLogs, "  [HIT] " .. v:GetFullName() .. " (" .. v.ClassName .. ")")
+                        local sg = v:FindFirstAncestorOfClass("ScreenGui")
+                        if sg then
+                            table.insert(clickScanLogs, "    ParentGui: " .. sg.Name)
+                            table.insert(clickScanLogs, "    Children:")
+                            for _, c in pairs(sg:GetChildren()) do
+                                local info = c.Name .. " (" .. c.ClassName .. ")"
+                                local vis = pcall(function() return c.Visible end) and tostring(c.Visible) or "?"
+                                table.insert(clickScanLogs, "      " .. info .. " visible=" .. vis)
+                            end
+                        end
+                    end
+                else
+                    table.insert(clickScanLogs, "  No GUI objects at click position")
+                end
+            end
+        end)
+    else
+        if clickScanCon then clickScanCon:Disconnect(); clickScanCon = nil end
+        table.insert(clickScanLogs, "--- Stopped ---")
+        local ok, err = pcall(function() writefile("yuki_click_scan_" .. tostring(math.floor(tick())) .. ".txt", table.concat(clickScanLogs, "\n")) end)
+        if ok then warn("Click scan saved to file!") else warn("writefile failed: " .. tostring(err)) end
+    end
+end })
+
+-- Rotate Scanner
+local scanLogs = {"=== Rotate Scanner ==="}
 local scanRunning = false
 local scanCon = nil
 local scanLastRot = {}
 
-US:Toggle({ Title = "Scanner", Desc = "Record rotating GUI elements", Callback = function(s)
+US:Space()
+US:Toggle({ Title = "Rotate Scanner", Desc = "Record rotating GUI elements", Callback = function(s)
     scanRunning = s
     if s then
         table.insert(scanLogs, "--- Started ---")
@@ -97,13 +159,13 @@ US:Toggle({ Title = "Scanner", Desc = "Record rotating GUI elements", Callback =
         if scanCon then scanCon:Disconnect(); scanCon = nil end
         table.insert(scanLogs, "--- Stopped ---")
         local ok, err = pcall(function() writefile("yuki_scan_" .. tostring(math.floor(tick())) .. ".txt", table.concat(scanLogs, "\n")) end)
-        if ok then warn("Scanner saved to file") else warn("writefile failed: " .. tostring(err)) end
+        if ok then warn("Rotate scan saved to file") else warn("writefile failed: " .. tostring(err)) end
     end
 end })
 US:Space()
-US:Button({ Title = "Copy Scan Log", Callback = function()
-    local ok, err = pcall(function() setclipboard(table.concat(scanLogs, "\n")) end)
-    if ok then warn("Scan log copied!") else warn("setclipboard failed: " .. tostring(err)) end
+US:Button({ Title = "Copy Click Log", Callback = function()
+    local ok, err = pcall(function() setclipboard(table.concat(clickScanLogs, "\n")) end)
+    if ok then warn("Click log copied!") else warn("setclipboard failed: " .. tostring(err)) end
 end })
 
 -- Auto Skill Check state
