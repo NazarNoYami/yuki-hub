@@ -34,7 +34,7 @@ local Window = WindUI:CreateWindow({
     HideSearchBar = false,
     Topbar = { Height = 44, ButtonsType = "Default" },
 })
-Window:SetAccentColor(Color3.fromRGB(0, 120, 255))
+-- No SetAccentColor - not available in all WindUI versions
 
 -- Tabs
 local T = {}
