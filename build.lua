@@ -800,6 +800,26 @@ US:Space()
 
 -- Auto Skill Check
 US:Toggle({ Title = "Auto Skill Check", Desc = "Auto-complete generator minigame", Callback = function(s) YH.asOn = s end })
+US:Space()
+US:Button({ Title = "Scan GUI", Desc = "Print all GUI names to console", Callback = function()
+    local seen = {}
+    for _, gui in pairs({game:GetService("CoreGui"), YH.LocalPlayer:FindFirstChildOfClass("PlayerGui")}) do
+        if not gui then continue end
+        for _, sg in pairs(gui:GetChildren()) do
+            if sg:IsA("ScreenGui") and sg.Enabled then
+                print("--- " .. sg.Name .. " ---")
+                for _, v in pairs(sg:GetDescendants()) do
+                    if (v:IsA("Frame") or v:IsA("ImageLabel") or v:IsA("ImageButton") or v:IsA("TextButton") or v:IsA("TextLabel")) and not seen[v] then
+                        seen[v] = true
+                            local ok, rot = pcall(function() return v.Rotation end)
+                            print("  " .. v.Name .. " (" .. v.ClassName .. ") rot=" .. (ok and tostring(rot) or "?"))
+                    end
+                end
+            end
+        end
+    end
+    print("--- Scan done ---")
+end })
 
 -- Auto Skill Check state
 local asNeedle, asState
