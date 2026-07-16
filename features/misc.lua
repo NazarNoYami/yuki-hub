@@ -169,18 +169,21 @@ YH.RunService.RenderStepped:Connect(function()
                     if asState == 0 then
                         asState = 1
                         warn("[ASC] CLICK! Line=" .. string.format("%.1f", lRot) .. " Goal=" .. string.format("%.1f", gRot))
-                        local pf = asLine:FindFirstAncestorOfClass("Frame") or asLine.Parent
-                        if pf:IsA("GuiObject") then
-                            local pos = pf.AbsolutePosition + pf.AbsoluteSize / 2
-                            YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
+                        local btn = asSG:FindFirstChildWhichIsA("ImageButton") or asSG:FindFirstChildWhichIsA("TextButton") or asSG:FindFirstChildWhichIsA("GuiButton")
+                        if btn then
+                            warn("[ASC] Found button: " .. btn.Name)
+                            pcall(function() btn:Click() end)
+                            pcall(function() btn.MouseButton1Click:Fire() end)
+                        else
+                            warn("[ASC] No button found, trying direct click")
+                            local pf = asLine:FindFirstAncestorOfClass("Frame") or asLine.Parent
+                            if pf:IsA("GuiObject") then
+                                local pos = pf.AbsolutePosition + pf.AbsoluteSize / 2
+                                YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
+                                YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
+                            end
                         end
-                    elseif asState == 1 then
                         asState = 2
-                        local pf = asLine:FindFirstAncestorOfClass("Frame") or asLine.Parent
-                        if pf:IsA("GuiObject") then
-                            local pos = pf.AbsolutePosition + pf.AbsoluteSize / 2
-                            YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
-                        end
                     end
                 elseif diff > 40 then
                     if asState ~= 0 then warn("[ASC] Selesai, reset") end
