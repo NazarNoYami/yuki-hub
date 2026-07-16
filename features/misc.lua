@@ -177,27 +177,29 @@ YH.RunService.RenderStepped:Connect(function()
                     if asState == 0 then
                         asState = 1
                         warn("[ASC] CLICK! Line=" .. string.format("%.1f", lRot) .. " Goal=" .. string.format("%.1f", gRot))
-                        -- Try all possible click methods
-                        local btn = asSG:FindFirstChildWhichIsA("GuiButton")
-                        if not btn then
-                            for _, v in pairs(asSG:GetDescendants()) do
-                                if v:IsA("GuiButton") then btn = v; break end
+                        -- Method 1: Fire Activated on all GuiObjects
+                        for _, v in pairs(asSG:GetDescendants()) do
+                            if v:IsA("GuiObject") then
+                                pcall(function() v.Activated:Fire() end)
                             end
                         end
-                        if btn then
-                            warn("[ASC] Button found: " .. btn:GetFullName() .. " (" .. btn.ClassName .. ")")
-                            pcall(function() btn:Click() end)
-                            pcall(function() btn.MouseButton1Click:Fire() end)
-                        else
-                            warn("[ASC] No button in GUI")
-                            -- Try clicking on the skill check frame directly
-                            for _, v in pairs(asSG:GetDescendants()) do
-                                if v:IsA("ImageButton") or v:IsA("TextButton") then
-                                    pcall(function() v:Click() end)
-                                    pcall(function() v.MouseButton1Click:Fire() end)
-                                end
-                            end
-                        end
+                        -- Method 2: VirtualInputManager at GUI center
+                        local pos = asSG.AbsolutePosition + asSG.AbsoluteSize / 2
+                        YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
+                        YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
+                        -- Method 3: Also try screen center
+                        local vs = YH.Camera.ViewportSize
+                        YH.VirtualInputManager:SendMouseButtonEvent(vs.X/2, vs.Y/2, 0, true, game, 1)
+                        YH.VirtualInputManager:SendMouseButtonEvent(vs.X/2, vs.Y/2, 0, false, game, 1)
+                        -- Method 4: Try "E" key
+                        YH.VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                        YH.VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                        -- Method 5: Try Space key
+                        YH.VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+                        YH.VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+                        -- Method 6: mouse1click if available
+                        pcall(mouse1click)
+                        warn("[ASC] All click methods fired")
                         asState = 2
                     end
                 elseif diff > 40 then
