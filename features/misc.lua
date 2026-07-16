@@ -69,6 +69,21 @@ for i = 1, 4 do
 end
 
 YH.RunService.RenderStepped:Connect(function()
+    -- Speedhack
+    if YH.spdOn and YH.LocalPlayer.Character and YH.LocalPlayer.Character:FindFirstChild("Humanoid") then
+        YH.LocalPlayer.Character.Humanoid.WalkSpeed = YH.spdVal or 32
+    end
+    -- Sprint
+    if YH.sprintOn and YH.LocalPlayer.Character and YH.LocalPlayer.Character:FindFirstChild("Humanoid") then
+        local sh = YH.UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or YH.UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+        YH.LocalPlayer.Character.Humanoid.WalkSpeed = sh and (16 * (YH.sprintBoost or 1.05)) or 16
+    end
+    -- Noclip
+    if YH.noclipOn and YH.LocalPlayer.Character then
+        for _, p in pairs(YH.LocalPlayer.Character:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = false end
+        end
+    end
     -- Crosshair
     if YH.chOn then
         local cx = YH.Camera.ViewportSize.X / 2
@@ -76,27 +91,29 @@ YH.RunService.RenderStepped:Connect(function()
         local len = YH.chLen
         local w = YH.chW
         for i = 1, 4 do chLines[i].Visible = true; chLines[i].Thickness = w end
-        -- Top
-        chLines[1].From = Vector2.new(cx, cy - len)
-        chLines[1].To = Vector2.new(cx, cy - 2)
-        -- Bottom
-        chLines[2].From = Vector2.new(cx, cy + 2)
-        chLines[2].To = Vector2.new(cx, cy + len)
-        -- Left
-        chLines[3].From = Vector2.new(cx - len, cy)
-        chLines[3].To = Vector2.new(cx - 2, cy)
-        -- Right
-        chLines[4].From = Vector2.new(cx + 2, cy)
-        chLines[4].To = Vector2.new(cx + len, cy)
+        chLines[1].From = Vector2.new(cx, cy - len); chLines[1].To = Vector2.new(cx, cy - 2)
+        chLines[2].From = Vector2.new(cx, cy + 2); chLines[2].To = Vector2.new(cx, cy + len)
+        chLines[3].From = Vector2.new(cx - len, cy); chLines[3].To = Vector2.new(cx - 2, cy)
+        chLines[4].From = Vector2.new(cx + 2, cy); chLines[4].To = Vector2.new(cx + len, cy)
     else
         for i = 1, 4 do chLines[i].Visible = false end
     end
-
     -- Stretched Res
     if YH.stOn then
-        YH.Camera.ViewportSize = Vector2.new(
-            YH.Camera.ViewportSize.X * (YH.stVal / 100),
-            YH.Camera.ViewportSize.Y
-        )
+        YH.Camera.ViewportSize = Vector2.new(YH.Camera.ViewportSize.X * (YH.stVal / 100), YH.Camera.ViewportSize.Y)
+    end
+end)
+
+-- Flashlight
+YH.RunService.Heartbeat:Connect(function()
+    if YH.flOn then
+        if not YH.flObj then
+            YH.flObj = Instance.new("SpotLight")
+            YH.flObj.Brightness = 2; YH.flObj.Range = 60; YH.flObj.Angle = 90
+            YH.flObj.Face = Enum.NormalId.Front; YH.flObj.Parent = YH.Camera
+        end
+        YH.flObj.Enabled = true
+    elseif YH.flObj then
+        YH.flObj.Enabled = false
     end
 end)
