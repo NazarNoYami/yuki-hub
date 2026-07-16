@@ -62,8 +62,10 @@ _G.YH = {
     genOn = false, genH = {}, genL = {}, hookOn = false, hookH = {}, hookL = {},
     palOn = false, palH = {}, gateOn = false, gateH = {}, gateL = {}, winOn = false, winL = {},
     projArcOn = false, projArcObj = nil,
-    brightOn = false, brightLevel = 1, fovOn = false, fovVal = 70, origFOV = Camera.FieldOfView,
-    fogOn = false, fogS = 0, fogE = 1000, skyOn = false, skyB = 50, skyE = 50,
+    brightOn = false, brightLevel = 1, brightOrig = {}, 
+        fovOn = false, fovVal = 70, origFOV = Camera.FieldOfView,
+        fogOn = false, fogS = 0, fogE = 1000, fogOrig = {Lighting.FogStart, Lighting.FogEnd},
+        skyOn = false, skyB = 50, skyE = 50, skyOrig = {Lighting.Brightness, Lighting.ExposureCompensation},
     spdOn = false, spdVal = 32, noclipOn = false,
     sprintOn = false, sprintBoost = 1.05, sprinting = false,
     flOn = false, flObj = nil, chOn = false, chLen = 10, chW = 2,
@@ -265,7 +267,18 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============== VISUALS TAB ==============
-T.Visuals:Toggle({ Title = "Bright Mode", Desc = "Auto-reapplies on map change", Callback = function(s) _G.YH.brightOn = s end })
+T.Visuals:Toggle({ Title = "Bright Mode", Desc = "Auto-reapplies on map change", Callback = function(s) 
+    _G.YH.brightOn = s
+    if s then
+        _G.YH.brightOrig = {Lighting.Ambient, Lighting.Brightness, Lighting.ClockTime, Lighting.FogEnd, Lighting.GlobalShadows, Lighting.OutdoorAmbient, Lighting.ColorShift_Top, Lighting.ColorShift_Bottom}
+    else
+        local o = _G.YH.brightOrig
+        if o and #o > 0 then
+            Lighting.Ambient = o[1]; Lighting.Brightness = o[2]; Lighting.ClockTime = o[3]; Lighting.FogEnd = o[4]
+            Lighting.GlobalShadows = o[5]; Lighting.OutdoorAmbient = o[6]; Lighting.ColorShift_Top = o[7]; Lighting.ColorShift_Bottom = o[8]
+        end
+    end
+end })
 T.Visuals:Space()
 T.Visuals:Slider({ Title = "Brightness Level", Width = 200, Value = { Min = 0.5, Max = 5, Default = 1 }, Step = 0.1, Callback = function(v) _G.YH.brightLevel = v end })
 T.Visuals:Space()
@@ -273,13 +286,13 @@ T.Visuals:Toggle({ Title = "Custom FOV", Callback = function(s) _G.YH.fovOn = s;
 T.Visuals:Space()
 T.Visuals:Slider({ Title = "FOV Value", Width = 200, Value = { Min = 30, Max = 120, Default = 70 }, Step = 1, Callback = function(v) _G.YH.fovVal = v; if _G.YH.fovOn then Camera.FieldOfView = v end end })
 T.Visuals:Space()
-T.Visuals:Toggle({ Title = "Custom Fog", Callback = function(s) _G.YH.fogOn = s end })
+T.Visuals:Toggle({ Title = "Custom Fog", Callback = function(s) _G.YH.fogOn = s; if not s then Lighting.FogStart = _G.YH.fogOrig[1]; Lighting.FogEnd = _G.YH.fogOrig[2] end end })
 T.Visuals:Space()
 T.Visuals:Slider({ Title = "Fog Start", Width = 200, Value = { Min = 0, Max = 500, Default = 0 }, Step = 1, Callback = function(v) _G.YH.fogS = v end })
 T.Visuals:Space()
 T.Visuals:Slider({ Title = "Fog End", Width = 200, Value = { Min = 100, Max = 2000, Default = 1000 }, Step = 10, Callback = function(v) _G.YH.fogE = v end })
 T.Visuals:Space()
-T.Visuals:Toggle({ Title = "Skybox", Callback = function(s) _G.YH.skyOn = s end })
+T.Visuals:Toggle({ Title = "Skybox", Callback = function(s) _G.YH.skyOn = s; if not s then Lighting.Brightness = _G.YH.skyOrig[1]; Lighting.ExposureCompensation = _G.YH.skyOrig[2] end end })
 T.Visuals:Space()
 T.Visuals:Slider({ Title = "Brightness", Width = 200, Value = { Min = 0, Max = 100, Default = 50 }, Step = 1, Callback = function(v) _G.YH.skyB = v end })
 T.Visuals:Space()
