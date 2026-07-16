@@ -1,6 +1,4 @@
--- Yuki Hub v5.0 - MINIMAL TEST
--- Cuma 1 tab + 1 toggle buat test WindUI
-
+-- Yuki Hub v5.0 - TEST 2 (tanpa Section)
 local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 
 local Window = WindUI:CreateWindow({
@@ -21,9 +19,15 @@ local Tab = Window:Tab({
     Border = true,
 })
 
-Tab:Section({ Title = "Test Section" })
+-- LANGSUNG ke Tab, tanpa Section
 Tab:Toggle({ Title = "Test Toggle", Callback = function(s) print("Toggle:", s) end })
 Tab:Space()
 Tab:Button({ Title = "Test Button", Callback = function() print("Button clicked") end })
+Tab:Space()
+Tab:Slider({ Title = "Test Slider", Width = 200, Value = { Min = 0, Max = 100, Default = 50 }, Step = 1, Callback = function(v) print("Slider:", v) end })
+Tab:Space()
+Tab:Dropdown({ Title = "Test Dropdown", Values = { "A", "B", "C" }, Value = 1, Callback = function(s) print("Dropdown:", s) end })
+Tab:Space()
+Tab:Colorpicker({ Title = "Test Color", Default = Color3.fromRGB(0, 255, 0), Callback = function(c) print("Color:", c) end })
 
-print("Yuki Hub TEST loaded successfully!")
+print("Yuki Hub TEST 2 loaded!")
