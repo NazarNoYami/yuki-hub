@@ -111,6 +111,42 @@ local projVelocity = 150
 local projGravity = 196.2
 local projAimUp = true
 local projTarget = nil
+local projLeadEnabled = true
+local projLeadFactor = 1
+
+-- Track target velocity for lead prediction
+local targetPrevPos = {}
+local targetVelocity = {}
+
+local function GetTargetVelocity(target)
+    local pos = GetTargetPosition(target)
+    if not pos then return Vector3.new() end
+    local prev = targetPrevPos[target]
+    targetPrevPos[target] = pos
+    if prev then
+        local vel = (pos - prev) / 0.1 -- RenderStepped ~ every 0.1s
+        targetVelocity[target] = targetVelocity[target] and (targetVelocity[target] * 0.7 + vel * 0.3) or vel
+    end
+    return targetVelocity[target] or Vector3.new()
+end
+
+local function PredictPosition(target, time)
+    local pos = GetTargetPosition(target)
+    if not pos then return nil end
+    local vel = GetTargetVelocity(target)
+    return pos + vel * time
+end
+
+local function CalculateProjectileTime(origin, target, velocity, gravity)
+    local dist = (target - origin).Magnitude
+    if dist < 1 then return nil end
+    local v = velocity or 150
+    -- rough estimate: time = distance / horizontal velocity
+    local angle = 45 * math.pi / 180
+    local vx = v * math.cos(angle)
+    if vx < 1 then return nil end
+    return dist / vx
+end
 
 local function CalculateProjectileAngle(origin, target, velocity, gravity)
     local dx = target.X - origin.X
@@ -146,17 +182,27 @@ local function CalculateProjectileAngle(origin, target, velocity, gravity)
 end
 
 local function GetProjectileAimPoint(origin, target, velocity, gravity)
-    local angle = CalculateProjectileAngle(origin, target, velocity, gravity)
+    -- With lead prediction: predict where target will be
+    local aimTarget = target
+    if projLeadEnabled then
+        local flightTime = CalculateProjectileTime(origin, target, velocity, gravity)
+        if flightTime then
+            local predicted = PredictPosition(target, flightTime * projLeadFactor)
+            if predicted then aimTarget = predicted end
+        end
+    end
+
+    local angle = CalculateProjectileAngle(origin, aimTarget, velocity, gravity)
     if not angle then return nil end
 
-    local dx = target.X - origin.X
-    local dz = target.Z - origin.Z
+    local dx = aimTarget.X - origin.X
+    local dz = aimTarget.Z - origin.Z
     local dist = math.sqrt(dx * dx + dz * dz)
     local dir = Vector2.new(dx, dz).Unit
 
     -- Calculate the height offset based on the angle
     local heightOffset = math.tan(angle) * dist
-    local aimPos = target + Vector3.new(0, heightOffset, 0)
+    local aimPos = aimTarget + Vector3.new(0, heightOffset, 0)
 
     return aimPos
 end
@@ -315,12 +361,14 @@ BasicAim:Slider({ Title = "FOV", Default = 90, Min = 10, Max = 360, Step = 1, Ca
 
 -- Projectile Aimbot Section
 local ProjAim = AimPage:Section({ Title = "Projectile Aimbot", Side = "Right" })
-ProjAim:Toggle({ Title = "Projectile Aimbot", Description = "Aimbot for bows/arcs", Default = false, Callback = function(state)
+ProjAim:Toggle({ Title = "Projectile Aimbot", Description = "Aimbot for bows/arcs/daggers", Default = false, Callback = function(state)
     projAimbotEnabled = state
     if state then aimEnabled = false end
 end})
 ProjAim:Slider({ Title = "Projectile Velocity", Description = "Bow/arrow speed", Default = 150, Min = 30, Max = 500, Step = 5, Callback = function(v) projVelocity = v end})
 ProjAim:Slider({ Title = "Gravity", Description = "Projectile gravity", Default = 196.2, Min = 50, Max = 500, Step = 1, Callback = function(v) projGravity = v end})
+ProjAim:Toggle({ Title = "Lead Prediction", Description = "Predict enemy movement", Default = true, Callback = function(state) projLeadEnabled = state end})
+ProjAim:Slider({ Title = "Lead Factor", Description = "Prediction multiplier", Default = 1, Min = 0.5, Max = 3, Step = 0.1, Callback = function(v) projLeadFactor = v end})
 ProjAim:Dropdown({ Title = "Aim Mode", Default = 1, Values = {"Auto Closest", "Lock Target"}, Callback = function(s)
     if s == "Auto Closest" then projTarget = nil end
 end})
