@@ -944,14 +944,8 @@ YH.RunService.RenderStepped:Connect(function()
             end
         end
         if asSG and asSG.Enabled then
-            if not asLine or not asLine.Parent then
-                asLine = asSG:FindFirstChild("Line", true)
-                if asLine then warn("[ASC] Jarum (Line) ditemukan cls=" .. asLine.ClassName) end
-            end
-            if not asGoal or not asGoal.Parent then
-                asGoal = asSG:FindFirstChild("Goal", true)
-                if asGoal then warn("[ASC] Target (Goal) ditemukan cls=" .. asGoal.ClassName) end
-            end
+            if not asLine or not asLine.Parent then asLine = asSG:FindFirstChild("Line", true) end
+            if not asGoal or not asGoal.Parent then asGoal = asSG:FindFirstChild("Goal", true) end
             if asLine and asGoal and asGoal.Rotation ~= 0 then
                 local lRot = asLine.Rotation % 360
                 local gRot = asGoal.Rotation
@@ -961,54 +955,25 @@ YH.RunService.RenderStepped:Connect(function()
                     local function between(a, b, t) if a <= b then return t >= a and t <= b else return t >= a or t <= b end end
                     inZone = between(asPrevRot, lRot, gRot)
                 end
-                if inZone then
-                    if asState == 0 then
-                        asState = 1
-                        warn("[ASC] CLICK! Line=" .. string.format("%.1f", lRot) .. " Goal=" .. string.format("%.1f", gRot))
-                        -- Jump method (most common for DBD skill checks)
-                        if YH.LocalPlayer.Character and YH.LocalPlayer.Character:FindFirstChild("Humanoid") then
-                            YH.LocalPlayer.Character.Humanoid.Jump = true
-                            warn("[ASC] Jump triggered")
-                        end
-                        -- ContextActionService
-                        pcall(function()
-                            local CAS = game:GetService("ContextActionService")
-                            for _, name in pairs({"SkillCheck","skillCheck","Generator","generator","Interact","Action","Use","Repair","E"}) do
-                                local ok = pcall(function() CAS:CallFunction(name, Enum.UserInputType.Keyboard, Enum.KeyCode.Space) end)
-                                if ok then warn("[ASC] CAS fired: " .. name) end
-                            end
-                        end)
-                        -- Fire Activated on all GuiObjects
-                        for _, v in pairs(asSG:GetDescendants()) do
-                            if v:IsA("GuiObject") then
-                                pcall(function() v.Activated:Fire() end)
-                            end
-                        end
-                        -- VirtualInputManager at GUI center + screen center
-                        local pos = asSG.AbsolutePosition + asSG.AbsoluteSize / 2
-                        local vs = YH.Camera.ViewportSize
+                if inZone and asState == 0 then
+                    asState = 2
+                    warn("[ASC] CLICK! Line=" .. string.format("%.1f", lRot) .. " Goal=" .. string.format("%.1f", gRot))
+                    local check = asSG:FindFirstChild("Check", true)
+                    if check and check:IsA("GuiObject") then
+                        local pos = check.AbsolutePosition + check.AbsoluteSize / 2
                         YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
                         YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
-                        YH.VirtualInputManager:SendMouseButtonEvent(vs.X/2, vs.Y/2, 0, true, game, 1)
-                        YH.VirtualInputManager:SendMouseButtonEvent(vs.X/2, vs.Y/2, 0, false, game, 1)
-                        -- Space + E keys
-                        YH.VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-                        YH.VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-                        YH.VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                        YH.VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                        -- mouse1click
-                        pcall(mouse1click)
-                        warn("[ASC] All methods fired")
-                        asState = 2
+                        warn("[ASC] Click at Check frame: " .. string.format("%.0f,%.0f", pos.X, pos.Y))
+                    else
+                        warn("[ASC] Check frame not found")
                     end
                 elseif diff > 40 then
-                    if asState ~= 0 then warn("[ASC] Selesai, reset") end
-                    asState = 0
+                    if asState ~= 0 then asState = 0 end
                 end
                 asPrevRot = lRot
             else
-                if asState ~= 0 then warn("[ASC] Minigame selesai (goal=0)") end
-                asState = 0; asPrevRot = nil
+                if asState ~= 0 then asState = 0 end
+                asPrevRot = nil
             end
         end
     end
