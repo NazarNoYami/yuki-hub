@@ -107,7 +107,7 @@ US:Button({ Title = "Copy Scan Log", Callback = function()
 end })
 
 -- Auto Skill Check state
-local asSG, asLine, asGoal, asState = nil, nil, nil, 0
+local asSG, asLine, asGoal, asState, asPrevRot = nil, nil, nil, 0, nil
 
 -- Crosshair drawing
 local chLines = {}
@@ -138,7 +138,7 @@ YH.RunService.RenderStepped:Connect(function()
     -- Auto Skill Check
     if YH.asOn then
         if not asSG or not asSG.Parent then
-            asSG = nil; asState = 0
+            asSG = nil; asState = 0; asPrevRot = nil
             local plrGui = YH.LocalPlayer:FindFirstChildOfClass("PlayerGui")
             for _, gui in pairs({game:GetService("CoreGui"), plrGui}) do
                 if not gui then continue end
@@ -153,7 +153,12 @@ YH.RunService.RenderStepped:Connect(function()
                 local lRot = asLine.Rotation % 360
                 local gRot = asGoal.Rotation
                 local diff = math.min(math.abs(lRot - gRot), math.abs(lRot - gRot - 360), math.abs(lRot - gRot + 360))
-                if diff < 5 then
+                local inZone = diff < 30
+                if not inZone and asPrevRot then
+                    local function between(a, b, t) if a <= b then return t >= a and t <= b else return t >= a or t <= b end end
+                    inZone = between(asPrevRot, lRot, gRot)
+                end
+                if inZone then
                     if asState == 0 then
                         asState = 1
                         local pf = asLine:FindFirstAncestorOfClass("Frame") or asLine.Parent
@@ -169,11 +174,12 @@ YH.RunService.RenderStepped:Connect(function()
                             YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
                         end
                     end
-                elseif diff > 15 then
+                elseif diff > 40 then
                     asState = 0
                 end
+                asPrevRot = lRot
             else
-                asState = 0
+                asState = 0; asPrevRot = nil
             end
         end
     end
