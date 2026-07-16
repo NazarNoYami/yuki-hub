@@ -57,6 +57,13 @@ US:Space()
 US:Button({ Title = "Infinite Yield", Callback = function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
 end})
+US:Space()
+
+-- Auto Skill Check
+US:Toggle({ Title = "Auto Skill Check", Desc = "Auto-complete generator minigame", Callback = function(s) YH.asOn = s end })
+
+-- Auto Skill Check state
+local asNeedle, asState
 
 -- Crosshair drawing
 local chLines = {}
@@ -82,6 +89,48 @@ YH.RunService.RenderStepped:Connect(function()
     if YH.noclipOn and YH.LocalPlayer.Character then
         for _, p in pairs(YH.LocalPlayer.Character:GetDescendants()) do
             if p:IsA("BasePart") then p.CanCollide = false end
+        end
+    end
+    -- Auto Skill Check
+    if YH.asOn then
+        if not asNeedle or not asNeedle.Parent then
+            asNeedle = nil; asState = 0
+            local plrGui = YH.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+            for _, gui in pairs({game:GetService("CoreGui"), plrGui}) do
+                if not gui then continue end
+                for _, sg in pairs(gui:GetChildren()) do
+                    if sg:IsA("ScreenGui") and sg.Enabled then
+                        for _, v in pairs(sg:GetDescendants()) do
+                            local n = v.Name:lower()
+                            if (v:IsA("Frame") or v:IsA("ImageLabel")) and (n:find("needle") or n:find("arrow") or n:find("indicator") or n:find("rotate")) then
+                                asNeedle = v; break
+                            end
+                        end
+                    end
+                    if asNeedle then break end
+                end
+                if asNeedle then break end
+            end
+        end
+        if asNeedle then
+            local rot = asNeedle.Rotation
+            if asState == 0 and math.abs(rot) < 5 then
+                asState = 1
+                local pf = asNeedle:FindFirstAncestorOfClass("Frame") or asNeedle.Parent
+                if pf:IsA("GuiObject") then
+                    local pos = pf.AbsolutePosition + pf.AbsoluteSize / 2
+                    YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
+                end
+            elseif asState == 1 then
+                asState = 2
+                local pf = asNeedle:FindFirstAncestorOfClass("Frame") or asNeedle.Parent
+                if pf:IsA("GuiObject") then
+                    local pos = pf.AbsolutePosition + pf.AbsoluteSize / 2
+                    YH.VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
+                end
+            elseif math.abs(rot) > 10 then
+                asState = 0
+            end
         end
     end
     -- Crosshair
