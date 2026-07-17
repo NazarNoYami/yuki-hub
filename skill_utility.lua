@@ -33,9 +33,12 @@ local ATTACK_ID = "139369275981139"
 local targets, selectedIndex, calibrationOffset = {}, 1, nil
 local autoSkill, calibrating, brightOn, generatorOn, playerOn = false, false, false, false, false
 local parryOn, parryRadius = false, 10
-local parryCircle, parryTargetIndex
+local parryMode = "Button"  -- "Button" or "Remote"
+local parryCircle
 local parryConnections, watchedKiller = {}, nil
 local lastParryTrigger = 0
+local parryCooldown = 1.0
+local ParryEvent
 -- Manual calibration already captures most device/reaction latency; keep only a small replay lead.
 local accuracy, inputLead = 4, 0.01
 local playerVisuals, generatorVisuals = {}, {}
@@ -208,7 +211,7 @@ local autoButton = makeButton("Auto Skill: OFF", 148)
 local brightButton = makeButton("Full Bright: OFF", 182)
 local generatorButton = makeButton("Generator ESP: OFF", 216)
 local playerButton = makeButton("Player ESP: OFF", 250)
-local parryTargetButton = makeButton("Parry Button: same target", 284)
+local parryModeButton = makeButton("Parry Mode: Button Click", 284)
 local parryButton = makeButton("Auto Parry: OFF", 318)
 local parryRadiusButton = makeButton("Parry Radius: 10 studs", 352)
 
@@ -394,18 +397,26 @@ connect(playerButton.MouseButton1Click, function()
     end
 end)
 
-connect(parryTargetButton.MouseButton1Click, function()
-    if #targets == 0 then return end
-    parryTargetIndex = parryTargetIndex and parryTargetIndex % #targets + 1 or 1
-    parryTargetButton.Text = "Parry Button: " .. targets[parryTargetIndex].name
-    addDebug("PARRY target set to " .. targets[parryTargetIndex].name)
+connect(parryModeButton.MouseButton1Click, function()
+    parryMode = (parryMode == "Button") and "Remote" or "Button"
+    parryModeButton.Text = "Parry Mode: " .. (parryMode == "Button" and "Button Click" or "Remote FireServer")
+    addDebug("PARRY mode set to " .. parryMode)
 end)
-local function parryTarget() return targets[parryTargetIndex or selectedIndex] end
 
 connect(parryButton.MouseButton1Click, function()
     parryOn = not parryOn
     setToggle(parryButton, "Auto Parry", parryOn)
     if parryOn then
+if not ParryEvent then
+            local ok, result = pcall(function()
+                local remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes", 5)
+                local items = remotes and remotes:WaitForChild("Items", 5)
+                local dagger = items and items:WaitForChild("Parrying Dagger", 5)
+                return dagger and dagger:WaitForChild("parry", 5)
+            end)
+            if ok and result then ParryEvent = result end
+            addDebug(ParryEvent and "PARRY remote found" or "PARRY remote not found")
+        end
         if not parryCircle then
             parryCircle = track(Drawing.new("Circle"))
             parryCircle.Color = Color3.fromRGB(90, 175, 235)
@@ -415,7 +426,7 @@ connect(parryButton.MouseButton1Click, function()
             parryCircle.Visible = false
         end
         refreshKillerWatcher()
-        addDebug("PARRY enabled")
+        addDebug("PARRY enabled (" .. parryMode .. ")")
     else
         disconnectAll(parryConnections)
         watchedKiller = nil
@@ -423,6 +434,19 @@ connect(parryButton.MouseButton1Click, function()
         addDebug("PARRY disabled")
     end
 end)
+
+local function equipDagger()
+    if not LocalPlayer.Character then return nil end
+    local dagger = LocalPlayer.Character:FindFirstChild("Parrying Dagger")
+    if dagger then return dagger end
+    dagger = LocalPlayer.Backpack:FindFirstChild("Parrying Dagger")
+    if dagger then
+        local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid:EquipTool(dagger) end
+        task.wait(0.1)
+    end
+    return LocalPlayer.Character:FindFirstChild("Parrying Dagger")
+end
 
 local parryRadii = {6, 8, 10, 12, 14, 16}
 local parryRadiusIdx = 3
@@ -450,6 +474,16 @@ local function geometry(killer)
     return offset.Magnitude, killerRoot.CFrame.LookVector:Dot(offset.Unit)
 end
 
+local function doParry()
+    if parryMode == "Remote" and ParryEvent then
+        ParryEvent:FireServer()
+        addDebug("PARRY FireServer sent")
+        return true
+    end
+    local target = targets[selectedIndex]
+    if target then replayTarget(target); return true end
+end
+
 local function watchKillerAnimator(killer, character)
     disconnectAll(parryConnections)
     watchedKiller = killer
@@ -461,13 +495,13 @@ local function watchKillerAnimator(killer, character)
         local id = normalizeId(track.Animation and track.Animation.AnimationId)
         if id == LUNGE_ID or id == ATTACK_ID then
             local now = os.clock()
-            if now - lastParryTrigger < 0.5 then return end
+            if now - lastParryTrigger < parryCooldown then return end
             lastParryTrigger = now
             local distance, facing = geometry(killer)
             if distance and distance <= parryRadius and facing and facing > 0.3 then
-                addDebug("PARRY trigger " .. track.Name .. " dist=" .. string.format("%.1f", distance))
-                local target = parryTarget()
-                if target then replayTarget(target) end
+                addDebug("PARRY trigger " .. track.Name .. " dist=" .. string.format("%.1f", distance) .. " " .. parryMode)
+                if parryMode == "Remote" then equipDagger() end
+                doParry()
             end
         end
     end, parryConnections)
