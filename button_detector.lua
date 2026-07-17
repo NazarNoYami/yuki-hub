@@ -193,6 +193,21 @@ local function updateStatus(message)
     status.Text = tostring(#targets) .. " targets recorded" .. (message and ("\n" .. message) or "")
 end
 
+local function fireButtonSignals(object, x, y)
+    if not object:IsA("GuiButton") then return false end
+    local fired = pcall(function() object:Activate() end)
+    if type(firesignal) ~= "function" then return fired end
+    for _, event in ipairs({
+        {object.MouseButton1Down, x, y},
+        {object.Activated, nil, 1},
+        {object.MouseButton1Click},
+        {object.MouseButton1Up, x, y},
+    }) do
+        if pcall(firesignal, event[1], event[2], event[3]) then fired = true end
+    end
+    return fired
+end
+
 local function clickTarget(target)
     local object = target.object
     if target.busy or not isVisible(object) then return end
@@ -203,7 +218,7 @@ local function clickTarget(target)
     local y = position.Y + size.Y * target.y
     target.lastX, target.lastY = x, y
     task.spawn(function()
-        local activated = false
+        local handled = false
         local lowerName = (target.name .. "/" .. table.concat(target.path, "/")):lower()
         if lowerName:find("jump") then
             local character = Players.LocalPlayer.Character
@@ -211,33 +226,30 @@ local function clickTarget(target)
             if humanoid then
                 humanoid.Jump = true
                 humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                activated = true
+                handled = true
                 target.method = "Humanoid Jump"
             end
         end
-        if not activated and object:IsA("GuiButton") and type(firesignal) == "function" then
-            activated = pcall(function()
-                firesignal(object.Activated)
-            end)
-            if activated then target.method = "GuiButton signal" end
-        end
-        if not activated and target.inputType == "Touch" then
-            local began = pcall(function() VirtualInputManager:SendTouchEvent(target.touchId, 0, x, y) end)
-            target.touchActive = began
-            task.wait(0.06)
-            local ended = pcall(function() VirtualInputManager:SendTouchEvent(target.touchId, 2, x, y) end)
-            target.touchActive = false
-            activated = began and ended
-            if activated then target.method = "Virtual touch" end
-        elseif not activated then
-            pcall(function()
-                VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-            end)
-            task.wait(0.04)
-            pcall(function()
-                VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
-            end)
-            target.method = "Virtual mouse"
+
+        if not handled then
+            local signaled = fireButtonSignals(object, x, y)
+            if target.inputType == "Touch" then
+                local began = pcall(function() VirtualInputManager:SendTouchEvent(target.touchId, 0, x, y) end)
+                target.touchActive = began
+                task.wait(0.06)
+                pcall(function() VirtualInputManager:SendTouchEvent(target.touchId, 2, x, y) end)
+                target.touchActive = false
+                target.method = signaled and "Signals + touch" or "Virtual touch"
+            else
+                pcall(function()
+                    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+                end)
+                task.wait(0.04)
+                pcall(function()
+                    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+                end)
+                target.method = signaled and "Signals + mouse" or "Virtual mouse"
+            end
         end
         if target.method then updateStatus(target.name .. " via " .. target.method) end
         target.busy = false
