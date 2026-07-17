@@ -37,8 +37,8 @@ screen.DisplayOrder = 999999
 screen.Parent = CoreGui
 
 local panel = Instance.new("Frame")
-panel.Size = UDim2.new(0, 270, 0, 280)
-panel.Position = UDim2.new(0, 12, 0.5, -140)
+panel.Size = UDim2.new(0, 270, 0, 316)
+panel.Position = UDim2.new(0, 12, 0.5, -158)
 panel.BackgroundColor3 = Color3.fromRGB(14, 17, 25)
 panel.BackgroundTransparency = 0.04
 panel.BorderSizePixel = 0
@@ -105,7 +105,8 @@ local targetButton = makeButton("Target: none", 102)
 local startButton = makeButton("Start Probe", 138)
 local earlyButton = makeButton("Result: TOO EARLY", 174, Color3.fromRGB(170, 105, 45))
 local successButton = makeButton("Result: SUCCESS", 210, Color3.fromRGB(40, 135, 90))
-local saveButton = makeButton("Save / Copy Results", 246)
+local lateButton = makeButton("Result: TOO LATE", 246, Color3.fromRGB(160, 60, 75))
+local saveButton = makeButton("Save / Copy Results", 282)
 
 local function cleanup()
     running = false
@@ -215,10 +216,15 @@ local function killerPlayer()
 end
 
 local function saveResults()
+    local counts = {TooEarly = 0, Success = 0, TooLate = 0}
+    for _, attempt in ipairs(attempts) do
+        if counts[attempt.outcome] ~= nil then counts[attempt.outcome] = counts[attempt.outcome] + 1 end
+    end
     local payload = {
         version = 1,
         placeId = game.PlaceId,
         savedUnix = os.time(),
+        counts = counts,
         attempts = attempts,
     }
     local json = HttpService:JSONEncode(payload)
@@ -227,7 +233,8 @@ local function saveResults()
         writefile("parry_probe_" .. tostring(os.time()) .. ".json", json)
     end)
     if type(setclipboard) == "function" then pcall(setclipboard, json) end
-    status.Text = saved and ("Saved " .. tostring(#attempts) .. " attempts") or ("Copied " .. tostring(#attempts) .. " attempts")
+    local summary = string.format("E:%d S:%d L:%d", counts.TooEarly, counts.Success, counts.TooLate)
+    status.Text = (saved and "Saved " or "Copied ") .. tostring(#attempts) .. " attempts | " .. summary
 end
 
 local function newAttempt(killer, cue)
@@ -334,6 +341,7 @@ connect(startButton.MouseButton1Click, function()
 end)
 connect(earlyButton.MouseButton1Click, function() setOutcome("TooEarly") end)
 connect(successButton.MouseButton1Click, function() setOutcome("Success") end)
+connect(lateButton.MouseButton1Click, function() setOutcome("TooLate") end)
 connect(saveButton.MouseButton1Click, saveResults)
 connect(UserInputService.InputBegan, recordParry)
 local function watchPlayer(player)
