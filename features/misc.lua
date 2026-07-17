@@ -28,21 +28,35 @@ crosshair:Slider({Title = "Thickness", Width = 200, Value = {Min = 1, Max = 6, D
 
 local skill = T:Section({Title = "Skill Check"})
 YH.skillTolerance = 18
-YH.skillRecorded = nil
-YH.skillRecording = false
-skill:Button({Title = "Record Next Input", Desc = "Open a skill check, then press or click it once", Callback = function()
-    YH.skillRecording = true
-    warn("[Yuki] Skill input recorder armed")
+local savedTargets, targetLabels, selectedTarget = {}, {}, nil
+local function loadSavedTargets()
+    savedTargets, targetLabels, selectedTarget = {}, {}, nil
+    if type(readfile) ~= "function" then targetLabels = {"File API unavailable"}; return end
+    local ok, data = pcall(function() return YH.HttpService:JSONDecode(readfile("yuki_button_targets.json")) end)
+    if not ok or type(data) ~= "table" or #data == 0 then targetLabels = {"No saved buttons"}; return end
+    for index, target in ipairs(data) do
+        if type(target.path) == "table" and type(target.fingerprint) == "string" then
+            target.label = (target.name or target.path[#target.path] or "Button") .. " #" .. index
+            table.insert(savedTargets, target)
+            table.insert(targetLabels, target.label)
+        end
+    end
+    selectedTarget = savedTargets[1]
+end
+loadSavedTargets()
+
+local targetDropdown = skill:Dropdown({Title = "Recorded Button", Values = targetLabels, Value = 1, Callback = function(value)
+    for _, target in ipairs(savedTargets) do if target.label == value then selectedTarget = target; break end end
 end})
 skill:Space()
-skill:Button({Title = "Clear Recorded Input", Callback = function()
-    YH.skillRecorded = nil
-    YH.skillRecording = false
-    warn("[Yuki] Recorded skill input cleared")
+skill:Button({Title = "Reload Saved Buttons", Desc = "Reload yuki_button_targets.json", Callback = function()
+    loadSavedTargets()
+    pcall(function() targetDropdown:Refresh(targetLabels) end)
+    warn("[Yuki] Loaded " .. tostring(#savedTargets) .. " saved button(s)")
 end})
 skill:Space()
-skill:Toggle({Title = "Auto Skill Check", Desc = "Replays the recorded input inside the goal", Callback = function(value)
-    if value and not YH.skillRecorded then warn("[Yuki] Record one manual skill input first") end
+skill:Toggle({Title = "Auto Skill Check", Desc = "Clicks the selected recorded button in the goal", Callback = function(value)
+    if value and not selectedTarget then warn("[Yuki] Record a button with button_detector.lua first") end
     YH.skillOn = value
 end})
 skill:Space()
@@ -80,56 +94,14 @@ local function findSkillGui()
     return (playerGui and playerGui:FindFirstChild("SkillCheckPromptGui")) or YH.CoreGui:FindFirstChild("SkillCheckPromptGui")
 end
 
-local function activeSkillCheck()
-    local gui = findSkillGui()
-    if not gui or not gui.Enabled then return nil end
-    local check = gui:FindFirstChild("Check", true)
-    if check and check:IsA("GuiObject") then return gui, check end
-end
-
-YH.Connect(YH.UserInputService.InputBegan, function(input)
-    if not YH.skillRecording then return end
-    local _, check = activeSkillCheck()
-    if not check then return end
-
-    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
-        YH.skillRecorded = {kind = "Key", key = input.KeyCode}
-        YH.skillRecording = false
-        warn("[Yuki] Recorded skill key: " .. input.KeyCode.Name)
-        return
+local function replaySelectedTarget()
+    if not selectedTarget then return end
+    if type(_G.YukiButtonDetectorGetTargets) == "function" and type(_G.YukiButtonDetectorClick) == "function" then
+        for _, target in ipairs(_G.YukiButtonDetectorGetTargets()) do
+            if target.key == selectedTarget.key then _G.YukiButtonDetectorClick(target); return end
+        end
     end
-
-    local button
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then button = 0
-    elseif input.UserInputType == Enum.UserInputType.MouseButton2 then button = 1
-    elseif input.UserInputType == Enum.UserInputType.MouseButton3 then button = 2 end
-    if button == nil then return end
-
-    local position, size = check.AbsolutePosition, check.AbsoluteSize
-    local pointer = YH.UserInputService:GetMouseLocation()
-    if input.UserInputType == Enum.UserInputType.Touch then pointer = input.Position end
-    YH.skillRecorded = {
-        kind = "Pointer",
-        button = button,
-        x = math.clamp((pointer.X - position.X) / math.max(size.X, 1), 0, 1),
-        y = math.clamp((pointer.Y - position.Y) / math.max(size.Y, 1), 0, 1),
-    }
-    YH.skillRecording = false
-    warn("[Yuki] Recorded skill pointer input")
-end)
-
-local function sendSkillInput(check)
-    local recorded = YH.skillRecorded
-    if not recorded then return end
-    if recorded.kind == "Key" then
-        YH.VirtualInputManager:SendKeyEvent(true, recorded.key, false, game)
-        task.delay(0.04, function() pcall(function() YH.VirtualInputManager:SendKeyEvent(false, recorded.key, false, game) end) end)
-        return
-    end
-    local position, size = check.AbsolutePosition, check.AbsoluteSize
-    local x, y = position.X + size.X * recorded.x, position.Y + size.Y * recorded.y
-    YH.VirtualInputManager:SendMouseButtonEvent(x, y, recorded.button, true, game, 0)
-    task.delay(0.04, function() pcall(function() YH.VirtualInputManager:SendMouseButtonEvent(x, y, recorded.button, false, game, 0) end) end)
+    warn("[Yuki] Open button_detector.lua before auto replay")
 end
 
 YH.Connect(YH.RunService.RenderStepped, function()
@@ -146,7 +118,7 @@ YH.Connect(YH.RunService.RenderStepped, function()
         setCrosshairVisible(false)
     end
 
-    if not YH.skillOn or not YH.skillRecorded then skillGui = nil; previousRotation = nil; armed = true; return end
+    if not YH.skillOn or not selectedTarget then skillGui = nil; previousRotation = nil; armed = true; return end
     if not skillGui or not skillGui.Parent then skillGui = findSkillGui(); previousRotation = nil; armed = true end
     if not skillGui or not skillGui.Enabled then previousRotation = nil; armed = true; return end
     local check = skillGui:FindFirstChild("Check", true)
@@ -164,7 +136,7 @@ YH.Connect(YH.RunService.RenderStepped, function()
     end
     if armed and (math.abs(difference) <= YH.skillTolerance or crossed) then
         armed = false
-        pcall(sendSkillInput, check)
+        pcall(replaySelectedTarget)
     elseif math.abs(difference) > YH.skillTolerance + 12 then
         armed = true
     end

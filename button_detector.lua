@@ -3,8 +3,10 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
 local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 local CLICK_INTERVAL = 0.65
+local SAVE_FILE = "yuki_button_targets.json"
 
 if _G.YukiButtonDetectorCleanup then pcall(_G.YukiButtonDetectorCleanup) end
 local old = CoreGui:FindFirstChild("YukiButtonDetector")
@@ -95,6 +97,28 @@ local targets = {}
 local connections = {}
 local nextTouchId = 100
 
+local function rootName(root)
+    return root == CoreGui and "CoreGui" or "PlayerGui"
+end
+
+local function saveTargets()
+    if type(writefile) ~= "function" then return false end
+    local data = {}
+    for _, target in ipairs(targets) do
+        table.insert(data, {
+            key = target.key,
+            name = target.name,
+            root = rootName(target.root),
+            path = target.path,
+            fingerprint = target.fingerprint,
+            x = target.x,
+            y = target.y,
+            inputType = target.inputType,
+        })
+    end
+    return pcall(writefile, SAVE_FILE, HttpService:JSONEncode(data))
+end
+
 local function releaseTarget(target)
     if target.touchActive then
         pcall(function() VirtualInputManager:SendTouchEvent(target.touchId, 2, target.lastX, target.lastY) end)
@@ -108,6 +132,8 @@ local function cleanup()
     for _, connection in ipairs(connections) do pcall(function() connection:Disconnect() end) end
     if screen.Parent then screen:Destroy() end
     _G.YukiButtonDetectorCleanup = nil
+    _G.YukiButtonDetectorGetTargets = nil
+    _G.YukiButtonDetectorClick = nil
 end
 _G.YukiButtonDetectorCleanup = cleanup
 
@@ -158,6 +184,38 @@ local function resolve(root, path)
     local current = root
     for _, name in ipairs(path) do current = current and current:FindFirstChild(name) end
     return current
+end
+
+local function loadTargets()
+    if type(readfile) ~= "function" then return false end
+    local ok, data = pcall(function() return HttpService:JSONDecode(readfile(SAVE_FILE)) end)
+    if not ok or type(data) ~= "table" then return false end
+    targets = {}
+    for _, saved in ipairs(data) do
+        if type(saved.path) == "table" and type(saved.fingerprint) == "string" then
+            nextTouchId = nextTouchId + 1
+            local root = saved.root == "CoreGui" and CoreGui or playerGui
+            local object = resolve(root, saved.path)
+            table.insert(targets, {
+                key = saved.key,
+                name = saved.name or saved.path[#saved.path] or "Button",
+                root = root,
+                path = saved.path,
+                object = object,
+                fingerprint = saved.fingerprint,
+                x = tonumber(saved.x) or 0.5,
+                y = tonumber(saved.y) or 0.5,
+                inputType = saved.inputType == "Mouse" and "Mouse" or "Touch",
+                touchId = nextTouchId,
+                touchActive = false,
+                busy = false,
+                wasVisible = false,
+                hasDisappeared = true,
+                lastClick = 0,
+            })
+        end
+    end
+    return true
 end
 
 local function pathKey(root, path)
@@ -297,6 +355,7 @@ end)
 clear.MouseButton1Click:Connect(function()
     for _, target in ipairs(targets) do releaseTarget(target) end
     targets = {}
+    saveTargets()
     recording = false
     record.Text = "Add Target: Record Next Click"
     updateStatus()
@@ -357,6 +416,7 @@ connect(UserInputService.InputBegan, function(input)
         if target.key == key then releaseTarget(target); targets[index] = newTarget; replaced = true; break end
     end
     if not replaced then table.insert(targets, newTarget) end
+    saveTargets()
     recording = false
     record.Text = "Add Target: Record Next Click"
     local imageStatus = fingerprint == "NO_IMAGE" and "no image" or "image captured"
@@ -382,3 +442,11 @@ connect(RunService.Heartbeat, function()
 end)
 
 close.MouseButton1Click:Connect(cleanup)
+
+local loaded = loadTargets()
+updateStatus(loaded and "Loaded from " .. SAVE_FILE or "No saved target file")
+_G.YukiButtonDetectorGetTargets = function() return targets end
+_G.YukiButtonDetectorClick = function(target)
+    if type(target) == "number" then target = targets[target] end
+    if target then clickTarget(target) end
+end

@@ -14,4 +14,5 @@ globals = {
   "Enum", "UDim",
   "task", "typeof",
   "loadstring", "mousemoverel", "setfpscap",
+  "readfile", "writefile", "firesignal",
 }
