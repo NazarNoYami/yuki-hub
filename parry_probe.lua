@@ -12,12 +12,15 @@ local ATTACK_ID = "139369275981139"
 
 if _G.YukiParryProbeCleanup then pcall(_G.YukiParryProbeCleanup) end
 
-local connections, characterConnections = {}, {}
+local connections, sessionConnections, killerConnections = {}, {}, {}
 local targets, selectedIndex = {}, 1
 local attempts = {}
+local timeline = {}
 local currentAttempt
 local running = false
 local watchedCharacter
+local sessionStartedAt = 0
+local ownHealth
 
 local function disconnectAll(list)
     for _, connection in ipairs(list) do pcall(function() connection:Disconnect() end) end
@@ -110,7 +113,8 @@ local saveButton = makeButton("Save / Copy Results", 282)
 
 local function cleanup()
     running = false
-    disconnectAll(characterConnections)
+    disconnectAll(sessionConnections)
+    disconnectAll(killerConnections)
     disconnectAll(connections)
     if screen.Parent then screen:Destroy() end
     _G.YukiParryProbeCleanup = nil
@@ -119,6 +123,18 @@ _G.YukiParryProbeCleanup = cleanup
 
 local function normalizeId(id)
     return tostring(id or ""):match("(%d+)") or ""
+end
+
+local function elapsedMs()
+    return sessionStartedAt > 0 and math.floor((os.clock() - sessionStartedAt) * 1000 + 0.5) or 0
+end
+
+local function logEvent(kind, data)
+    if not running then return end
+    data = data or {}
+    data.t = elapsedMs()
+    data.kind = kind
+    table.insert(timeline, data)
 end
 
 local function resolve(root, path)
@@ -153,6 +169,38 @@ local function imageFingerprint(button)
     end
     table.sort(images)
     return #images > 0 and table.concat(images, ";") or "NO_IMAGE"
+end
+
+local function clickableObject(object, root)
+    local current = object
+    while current and current ~= root do
+        if current:IsA("GuiButton") then return current end
+        current = current.Parent
+    end
+    return object
+end
+
+local function objectsAt(x, y)
+    local result, seen = {}, {}
+    for _, root in ipairs({PlayerGui, CoreGui}) do
+        local ok, objects = pcall(function() return root:GetGuiObjectsAtPosition(x, y) end)
+        if ok then
+            for _, object in ipairs(objects) do
+                local clickable = clickableObject(object, root)
+                if not seen[clickable] then
+                    seen[clickable] = true
+                    table.insert(result, {
+                        name = clickable.Name,
+                        class = clickable.ClassName,
+                        root = root == CoreGui and "CoreGui" or "PlayerGui",
+                        path = table.concat(pathFrom(root, clickable) or {}, "/"),
+                        fingerprint = imageFingerprint(clickable),
+                    })
+                end
+            end
+        end
+    end
+    return result
 end
 
 local function targetVisible(target)
@@ -226,6 +274,7 @@ local function saveResults()
         savedUnix = os.time(),
         counts = counts,
         attempts = attempts,
+        timeline = timeline,
     }
     local json = HttpService:JSONEncode(payload)
     local saved = type(writefile) == "function" and pcall(function()
@@ -256,11 +305,18 @@ local function newAttempt(killer, cue)
         outcome = nil,
     }
     table.insert(attempts, currentAttempt)
+    logEvent("attempt_started", {
+        attempt = currentAttempt.index,
+        cue = cue,
+        killer = killer.Name,
+        distance = distance,
+        facing = facing,
+    })
     status.Text = string.format("Attempt #%d: %s | %.1f studs", currentAttempt.index, cue, distance or -1)
 end
 
 local function watchKiller(character, killer)
-    disconnectAll(characterConnections)
+    disconnectAll(killerConnections)
     watchedCharacter = character
     local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5)
     local animator = humanoid and (humanoid:FindFirstChildOfClass("Animator") or humanoid:WaitForChild("Animator", 5))
@@ -268,6 +324,24 @@ local function watchKiller(character, killer)
     connect(animator.AnimationPlayed, function(track)
         if not running then return end
         local id = normalizeId(track.Animation and track.Animation.AnimationId)
+        logEvent("killer_animation", {
+            killer = killer.Name,
+            id = id,
+            name = track.Name,
+            priority = track.Priority.Name,
+            speed = track.Speed,
+            length = track.Length,
+            distance = select(1, geometry(killer)),
+            facing = select(2, geometry(killer)),
+        })
+        connect(track.Stopped, function()
+            logEvent("killer_animation_stopped", {
+                killer = killer.Name,
+                id = id,
+                name = track.Name,
+                position = track.TimePosition,
+            })
+        end, killerConnections)
         if id == LUNGE_ID then
             newAttempt(killer, "lungehold")
         elseif id == ATTACK_ID then
@@ -279,10 +353,16 @@ local function watchKiller(character, killer)
                 local distance, facing = geometry(killer)
                 currentAttempt.distanceAtAttack = distance
                 currentAttempt.facingAtAttack = facing
+                logEvent("attack_linked", {
+                    attempt = currentAttempt.index,
+                    lungeToAttackMs = currentAttempt.lungeToAttackMs,
+                    distance = distance,
+                    facing = facing,
+                })
                 status.Text = string.format("Attempt #%d: attack | %.1f studs", currentAttempt.index, distance or -1)
             end
         end
-    end, characterConnections)
+    end, killerConnections)
 end
 
 local function refreshKiller()
@@ -292,13 +372,22 @@ local function refreshKiller()
 end
 
 local function recordParry(input)
-    if not running or not currentAttempt or currentAttempt.parryAt then return end
+    if not running then return end
+    local isPointer = input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1
+    local point = isPointer and (input.UserInputType == Enum.UserInputType.Touch and input.Position or UserInputService:GetMouseLocation()) or nil
+    local clicked = point and objectsAt(point.X, point.Y) or {}
+    logEvent("input_began", {
+        input = input.KeyCode ~= Enum.KeyCode.Unknown and input.KeyCode.Name or input.UserInputType.Name,
+        x = point and point.X or nil,
+        y = point and point.Y or nil,
+        gui = clicked,
+    })
+    if not currentAttempt or currentAttempt.parryAt then return end
     local target = selectedTarget()
     if not target then return end
     if not target.object or not target.object.Parent then target.object = resolve(target.root, target.path) end
     if not targetVisible(target) then return end
-    if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-    local point = input.UserInputType == Enum.UserInputType.Touch and input.Position or UserInputService:GetMouseLocation()
+    if not isPointer then return end
     local position, size = target.object.AbsolutePosition, target.object.AbsoluteSize
     if point.X < position.X or point.X > position.X + size.X or point.Y < position.Y or point.Y > position.Y + size.Y then return end
     currentAttempt.parryAt = os.clock()
@@ -311,6 +400,15 @@ local function recordParry(input)
         local distance, facing = geometry(killer)
         currentAttempt.distanceAtParry, currentAttempt.facingAtParry = distance, facing
     end
+    logEvent("parry_pressed", {
+        attempt = currentAttempt.index,
+        target = target.name,
+        fromLungeMs = currentAttempt.fromLungeMs,
+        fromAttackMs = currentAttempt.fromAttackMs,
+        distance = currentAttempt.distanceAtParry,
+        facing = currentAttempt.facingAtParry,
+        gui = clicked,
+    })
     status.Text = string.format("Attempt #%d parry: L=%sms A=%sms\nChoose result", currentAttempt.index,
         tostring(currentAttempt.fromLungeMs), tostring(currentAttempt.fromAttackMs))
 end
@@ -322,6 +420,12 @@ local function setOutcome(outcome)
     end
     currentAttempt.outcome = outcome
     currentAttempt.completedUnix = os.time()
+    logEvent("attempt_outcome", {
+        attempt = currentAttempt.index,
+        outcome = outcome,
+        fromLungeMs = currentAttempt.fromLungeMs,
+        fromAttackMs = currentAttempt.fromAttackMs,
+    })
     status.Text = string.format("Attempt #%d = %s\nL=%sms A=%sms", currentAttempt.index, outcome,
         tostring(currentAttempt.fromLungeMs), tostring(currentAttempt.fromAttackMs))
     saveResults()
@@ -337,13 +441,43 @@ connect(startButton.MouseButton1Click, function()
     running = not running
     startButton.Text = running and "Probe Running" or "Start Probe"
     startButton.BackgroundColor3 = running and Color3.fromRGB(45, 135, 100) or Color3.fromRGB(50, 56, 76)
-    if running then refreshKiller() else disconnectAll(characterConnections); watchedCharacter = nil end
+    if running then
+        if sessionStartedAt == 0 then
+            sessionStartedAt = os.clock()
+            timeline = {}
+            attempts = {}
+        end
+        logEvent("probe_started", {target = selectedTarget() and selectedTarget().name})
+        refreshKiller()
+        local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            ownHealth = humanoid.Health
+            connect(humanoid.HealthChanged, function(health)
+                logEvent("survivor_health", {old = ownHealth, new = health, delta = health - ownHealth})
+                ownHealth = health
+            end, sessionConnections)
+            connect(humanoid.StateChanged, function(oldState, newState)
+                logEvent("survivor_state", {old = oldState.Name, new = newState.Name})
+            end, sessionConnections)
+        end
+    else
+        logEvent("probe_stopped")
+        disconnectAll(sessionConnections)
+        disconnectAll(killerConnections)
+        watchedCharacter = nil
+        saveResults()
+    end
 end)
 connect(earlyButton.MouseButton1Click, function() setOutcome("TooEarly") end)
 connect(successButton.MouseButton1Click, function() setOutcome("Success") end)
 connect(lateButton.MouseButton1Click, function() setOutcome("TooLate") end)
 connect(saveButton.MouseButton1Click, saveResults)
 connect(UserInputService.InputBegan, recordParry)
+connect(UserInputService.InputEnded, function(input)
+    logEvent("input_ended", {
+        input = input.KeyCode ~= Enum.KeyCode.Unknown and input.KeyCode.Name or input.UserInputType.Name,
+    })
+end)
 local function watchPlayer(player)
     connect(player.CharacterAdded, function() if running then task.wait(0.5); refreshKiller() end end)
 end
