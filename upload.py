@@ -8,7 +8,7 @@ REPO = "NazarNoYami/yuki-hub"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 API = "https://api.github.com/repos"
 FILES = [
-    "build.lua", "button_detector.lua", "skill_utility.lua", "build.py", ".luacheckrc", ".github/workflows/lint.yml",
+    "build.lua", "button_detector.lua", "skill_utility.lua", "killer_probe.lua", "build.py", ".luacheckrc", ".github/workflows/lint.yml",
     "features/_init.lua", "features/_windui.lua", "features/main.lua",
     "features/visuals.lua", "features/esp.lua", "features/aimbot.lua",
     "features/misc.lua", "features/hud.lua", "features/credits.lua",
