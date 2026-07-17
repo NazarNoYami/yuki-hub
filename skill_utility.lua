@@ -317,13 +317,14 @@ local function replayTarget(target)
     target.lastX, target.lastY = x, y
     task.spawn(function()
         local signaled = fireSignals(object, x, y)
-        addDebug(string.format("REPLAY %s signal=%s input=%s", target.name, tostring(signaled), target.inputType))
         if target.inputType == "Touch" then
+            addDebug(string.format("REPLAY %s signal=%s input=Touch", target.name, tostring(signaled)))
             target.touchActive = pcall(function() VirtualInputManager:SendTouchEvent(target.touchId, 0, x, y) end)
             task.wait(0.06)
             pcall(function() VirtualInputManager:SendTouchEvent(target.touchId, 2, x, y) end)
             target.touchActive = false
         else
+            addDebug(string.format("REPLAY %s signal=%s input=Mouse", target.name, tostring(signaled)))
             pcall(function() VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0) end)
             task.wait(0.04)
             pcall(function() VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0) end)
@@ -408,16 +409,17 @@ connect(UserInputService.InputBegan, function(input, processed)
     addDebug(string.format("CALIBRATION saved offset=%.2f", calibrationOffset))
 end)
 
-local skillGui, previousRotation, previousError, velocity, clickedPrompt = nil, nil, nil, 0, false
+local skillGui, previousRotation, previousRawError, velocity, clickedPrompt = nil, nil, nil, 0, false
 local promptElapsed, promptArmed = 0, false
 local promptStatus, promptActive
+local lastTriggerSummary
 local scanTimer = 0
 local function resetPrompt()
     if promptActive then addDebug("PROMPT ended") end
-    previousRotation, previousError, velocity, clickedPrompt = nil, nil, 0, false
+    previousRotation, previousRawError, velocity, clickedPrompt = nil, nil, 0, false
     promptElapsed, promptArmed = 0, false
     promptStatus, promptActive = nil, false
-    setDebugLive("Prompt inactive", true)
+    setDebugLive(lastTriggerSummary and ("Prompt inactive\n" .. lastTriggerSummary) or "Prompt inactive", true)
 end
 local function setPromptStatus(value)
     if promptStatus == value then return end
@@ -451,36 +453,45 @@ connect(RunService.RenderStepped, function(dt)
                 promptElapsed = promptElapsed + dt
                 setPromptStatus(promptArmed and "armed" or "waiting")
                 local rotation, goalRotation = line.AbsoluteRotation % 360, goal.AbsoluteRotation % 360
+                local rawDifference = angularDifference(rotation, goalRotation)
+                local rawError = angularDifference(rawDifference, calibrationOffset)
                 if previousRotation and dt > 0 then
                     local measured = angularDifference(rotation, previousRotation) / dt
                     velocity = velocity == 0 and measured or velocity * 0.65 + measured * 0.35
                 end
-                local difference = angularDifference(rotation + velocity * inputLead, goalRotation)
-                local err = angularDifference(difference, calibrationOffset)
+                local errorVelocity = velocity
+                local err = rawError + errorVelocity * inputLead
                 local moving = math.abs(velocity) >= 15
                 if promptElapsed >= 0.18 and moving and math.abs(err) >= math.max(accuracy + 8, 12) then
                     promptArmed = true
                     setPromptStatus("armed")
                 end
-                -- Both samples must be near the calibrated point. This rejects the 180/-180 wrap.
-                local crossingRange = math.max(accuracy * 4, 20)
-                local crossed = previousError
-                    and math.abs(previousError) <= crossingRange
-                    and math.abs(err) <= crossingRange
-                    and previousError * err <= 0
+                local timeToTarget = errorVelocity ~= 0 and (-rawError / errorVelocity) or math.huge
+                local approaching = timeToTarget >= 0 and timeToTarget <= inputLead + dt * 1.25
+                -- Crossing is only a narrow fallback when a low-FPS frame skips the target.
+                local crossingRange = accuracy
+                local crossed = previousRawError
+                    and math.abs(previousRawError) <= crossingRange
+                    and math.abs(rawError) <= crossingRange
+                    and previousRawError * rawError <= 0
                 setDebugLive(string.format(
-                    "state=%s armed=%s clicked=%s\nline=%.2f goal=%.2f targetOff=%.2f\nerror=%.2f vel=%.1f lead=%dms move=%s cross=%s",
+                    "state=%s armed=%s clicked=%s\nline=%.2f goal=%.2f targetOff=%.2f\nrawErr=%.2f predErr=%.2f vel=%.1f tTarget=%dms\nlead=%dms move=%s approach=%s cross=%s",
                     promptStatus or "waiting", tostring(promptArmed), tostring(clickedPrompt),
-                    rotation, goalRotation, calibrationOffset, err, velocity, math.floor(inputLead * 1000 + 0.5),
-                    tostring(moving), tostring(crossed)
+                    rotation, goalRotation, calibrationOffset, rawError, err, velocity,
+                    timeToTarget == math.huge and -1 or math.floor(timeToTarget * 1000 + 0.5),
+                    math.floor(inputLead * 1000 + 0.5), tostring(moving), tostring(approaching), tostring(crossed)
                 ))
-                if promptArmed and not clickedPrompt and moving and (math.abs(err) <= accuracy or crossed) then
+                if promptArmed and not clickedPrompt and moving and (math.abs(err) <= accuracy or approaching or crossed) then
                     clickedPrompt = true
                     setPromptStatus("clicked")
-                    addDebug(string.format("TRIGGER error=%.2f crossed=%s", err, tostring(crossed)))
+                    lastTriggerSummary = string.format("last raw=%.2f pred=%.2f t=%dms", rawError, err,
+                        timeToTarget == math.huge and -1 or math.floor(timeToTarget * 1000 + 0.5))
+                    addDebug(string.format("TRIGGER raw=%.2f pred=%.2f t=%dms approach=%s cross=%s", rawError, err,
+                        timeToTarget == math.huge and -1 or math.floor(timeToTarget * 1000 + 0.5),
+                        tostring(approaching), tostring(crossed)))
                     replayTarget(selectedTarget())
                 end
-                previousRotation, previousError = rotation, err
+                previousRotation, previousRawError = rotation, rawError
             else
                 resetPrompt()
                 if not line or not goal then setDebugLive("Prompt GUI found; missing Line/Goal") end
