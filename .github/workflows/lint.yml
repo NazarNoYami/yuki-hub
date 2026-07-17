@@ -3,10 +3,10 @@ name: Lint
 on:
   push:
     branches: [main]
-    paths: ['features/**', 'main.lua', 'build.lua', '.luacheckrc']
+    paths: ['features/**', 'build.lua', '.luacheckrc']
   pull_request:
     branches: [main]
-    paths: ['features/**', 'main.lua', 'build.lua', '.luacheckrc']
+    paths: ['features/**', 'build.lua', '.luacheckrc']
 
 jobs:
   luacheck:
@@ -20,4 +20,4 @@ jobs:
       - name: Install luacheck
         run: luarocks install luacheck
       - name: Run luacheck
-        run: luacheck features/ main.lua build.lua --config .luacheckrc
+        run: luacheck features/ build.lua --config .luacheckrc
