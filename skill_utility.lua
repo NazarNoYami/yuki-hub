@@ -30,7 +30,8 @@ local originalLighting = {
 }
 local targets, selectedIndex, calibrationOffset = {}, 1, nil
 local autoSkill, calibrating, brightOn, generatorOn, playerOn = false, false, false, false, false
-local accuracy, inputLead = 4, 0.04
+-- Manual calibration already captures most device/reaction latency; keep only a small replay lead.
+local accuracy, inputLead = 4, 0.01
 local playerVisuals, generatorVisuals = {}, {}
 local debugLines = {}
 local debugLiveText = "Prompt inactive"
@@ -469,7 +470,8 @@ connect(RunService.RenderStepped, function(dt)
                     setPromptStatus("armed")
                 end
                 local timeToTarget = errorVelocity ~= 0 and (-rawError / errorVelocity) or math.huge
-                local approaching = timeToTarget >= 0 and timeToTarget <= inputLead + dt * 1.25
+                local frameMargin = math.min(dt * 0.5, 0.008)
+                local approaching = timeToTarget >= 0 and timeToTarget <= inputLead + frameMargin
                 -- Crossing is only a narrow fallback when a low-FPS frame skips the target.
                 local crossingRange = accuracy
                 local crossed = previousRawError
