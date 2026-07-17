@@ -14,9 +14,9 @@ if _G.YukiSkillUtilityCleanup then pcall(_G.YukiSkillUtilityCleanup) end
 
 local connections, instances = {}, {}
 local function track(instance) table.insert(instances, instance); return instance end
-local function connect(signal, callback)
+local function connect(signal, callback, list)
     local connection = signal:Connect(callback)
-    table.insert(connections, connection)
+    table.insert(list or connections, connection)
     return connection
 end
 
@@ -28,8 +28,14 @@ local originalLighting = {
     GlobalShadows = Lighting.GlobalShadows,
     FogEnd = Lighting.FogEnd,
 }
+local LUNGE_ID = "110355011987939"
+local ATTACK_ID = "139369275981139"
 local targets, selectedIndex, calibrationOffset = {}, 1, nil
 local autoSkill, calibrating, brightOn, generatorOn, playerOn = false, false, false, false, false
+local parryOn, parryRadius = false, 10
+local parryCircle, parryTargetIndex
+local parryConnections, watchedKiller = {}, nil
+local lastParryTrigger = 0
 -- Manual calibration already captures most device/reaction latency; keep only a small replay lead.
 local accuracy, inputLead = 4, 0.01
 local playerVisuals, generatorVisuals = {}, {}
@@ -45,6 +51,8 @@ local function cleanup()
         end
     end
     for _, connection in ipairs(connections) do pcall(function() connection:Disconnect() end) end
+    for _, connection in ipairs(parryConnections) do pcall(function() connection:Disconnect() end) end
+    if parryCircle then pcall(function() parryCircle:Remove() end); parryCircle = nil end
     for _, instance in ipairs(instances) do pcall(function() instance:Destroy() end) end
     for property, value in pairs(originalLighting) do pcall(function() Lighting[property] = value end) end
     _G.YukiSkillUtilityCleanup = nil
@@ -130,7 +138,7 @@ local function setDebugLive(text, force)
 end
 
 local panel = Instance.new("Frame")
-panel.Size = UDim2.new(0, 250, 0, 286)
+panel.Size = UDim2.new(0, 250, 0, 388)
 panel.Position = UDim2.new(0, 12, 0.5, -143)
 panel.BackgroundColor3 = Color3.fromRGB(15, 18, 27)
 panel.BackgroundTransparency = 0.05
@@ -200,6 +208,9 @@ local autoButton = makeButton("Auto Skill: OFF", 148)
 local brightButton = makeButton("Full Bright: OFF", 182)
 local generatorButton = makeButton("Generator ESP: OFF", 216)
 local playerButton = makeButton("Player ESP: OFF", 250)
+local parryTargetButton = makeButton("Parry Button: same target", 284)
+local parryButton = makeButton("Auto Parry: OFF", 318)
+local parryRadiusButton = makeButton("Parry Radius: 10 studs", 352)
 
 local function setToggle(button, label, enabled)
     button.Text = label .. ": " .. (enabled and "ON" or "OFF")
@@ -383,6 +394,91 @@ connect(playerButton.MouseButton1Click, function()
     end
 end)
 
+connect(parryTargetButton.MouseButton1Click, function()
+    if #targets == 0 then return end
+    parryTargetIndex = parryTargetIndex and parryTargetIndex % #targets + 1 or 1
+    parryTargetButton.Text = "Parry Button: " .. targets[parryTargetIndex].name
+    addDebug("PARRY target set to " .. targets[parryTargetIndex].name)
+end)
+local function parryTarget() return targets[parryTargetIndex or selectedIndex] end
+
+connect(parryButton.MouseButton1Click, function()
+    parryOn = not parryOn
+    setToggle(parryButton, "Auto Parry", parryOn)
+    if parryOn then
+        if not parryCircle then
+            parryCircle = track(Drawing.new("Circle"))
+            parryCircle.Color = Color3.fromRGB(90, 175, 235)
+            parryCircle.Thickness = 1.5
+            parryCircle.Transparency = 0.65
+            parryCircle.Filled = false
+            parryCircle.Visible = false
+        end
+        refreshKillerWatcher()
+        addDebug("PARRY enabled")
+    else
+        disconnectAll(parryConnections)
+        watchedKiller = nil
+        if parryCircle then parryCircle.Visible = false end
+        addDebug("PARRY disabled")
+    end
+end)
+
+local parryRadii = {6, 8, 10, 12, 14, 16}
+local parryRadiusIdx = 3
+connect(parryRadiusButton.MouseButton1Click, function()
+    parryRadiusIdx = parryRadiusIdx % #parryRadii + 1
+    parryRadius = parryRadii[parryRadiusIdx]
+    parryRadiusButton.Text = "Parry Radius: " .. parryRadius .. " studs"
+end)
+
+local function normalizeId(id) return tostring(id or ""):match("(%d+)") or "" end
+local function rootOf(player) return player.Character and player.Character:FindFirstChild("HumanoidRootPart") end
+local function killerPlayer()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local team = player.Team and player.Team.Name:lower() or ""
+            if team:find("killer") or team:find("maniac") then return player end
+        end
+    end
+end
+
+local function geometry(killer)
+    local killerRoot, ownRoot = rootOf(killer), rootOf(LocalPlayer)
+    if not killerRoot or not ownRoot then return nil, nil end
+    local offset = ownRoot.Position - killerRoot.Position
+    return offset.Magnitude, killerRoot.CFrame.LookVector:Dot(offset.Unit)
+end
+
+local function watchKillerAnimator(killer, character)
+    disconnectAll(parryConnections)
+    watchedKiller = killer
+    local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5)
+    local animator = humanoid and (humanoid:FindFirstChildOfClass("Animator") or humanoid:WaitForChild("Animator", 5))
+    if not animator then return end
+    connect(animator.AnimationPlayed, function(track)
+        if not parryOn then return end
+        local id = normalizeId(track.Animation and track.Animation.AnimationId)
+        if id == LUNGE_ID or id == ATTACK_ID then
+            local now = os.clock()
+            if now - lastParryTrigger < 0.5 then return end
+            lastParryTrigger = now
+            local distance, facing = geometry(killer)
+            if distance and distance <= parryRadius and facing and facing > 0.3 then
+                addDebug("PARRY trigger " .. track.Name .. " dist=" .. string.format("%.1f", distance))
+                local target = parryTarget()
+                if target then replayTarget(target) end
+            end
+        end
+    end, parryConnections)
+end
+
+local function refreshKillerWatcher()
+    local killer = killerPlayer()
+    if not killer then return end
+    if killer.Character and killer.Character ~= watchedKiller then watchKillerAnimator(killer, killer.Character) end
+end
+
 connect(close.MouseButton1Click, cleanup)
 
 connect(UserInputService.InputBegan, function(input, processed)
@@ -511,6 +607,23 @@ connect(RunService.RenderStepped, function(dt)
     scanTimer = scanTimer + dt
     if scanTimer < 0.4 then return end
     scanTimer = 0
+
+    if parryOn then
+        refreshKillerWatcher()
+        local character = LocalPlayer.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if parryCircle and root then
+            local camera = workspace.CurrentCamera
+            local point, visible = camera and camera:WorldToViewportPoint(root.Position)
+            if visible then
+                parryCircle.Radius = math.max(parryRadius * 1000 / point.Z, 5)
+                parryCircle.Position = Vector2.new(point.X, point.Y)
+                parryCircle.Visible = true
+            else
+                parryCircle.Visible = false
+            end
+        end
+    end
 
     if playerOn then
         for _, player in ipairs(Players:GetPlayers()) do
