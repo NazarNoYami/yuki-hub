@@ -189,6 +189,38 @@ local function clickableObject(object, root)
     return object
 end
 
+local function imageFingerprint(button)
+    local images = {}
+    local candidates = {button}
+    for _, descendant in ipairs(button:GetDescendants()) do table.insert(candidates, descendant) end
+    for _, image in ipairs(candidates) do
+        if image:IsA("ImageLabel") or image:IsA("ImageButton") then
+            local active = image.Visible and image.ImageTransparency < 0.95
+            local current = image.Parent
+            while active and current and current ~= button do
+                if current:IsA("GuiObject") and not current.Visible then active = false end
+                current = current.Parent
+            end
+            if active then
+                local relativePath = pathFrom(button, image) or {}
+                table.insert(images, table.concat({
+                    table.concat(relativePath, "/"),
+                    image.ClassName,
+                    image.Image,
+                    tostring(image.ImageRectOffset),
+                    tostring(image.ImageRectSize),
+                }, "|"))
+            end
+        end
+    end
+    table.sort(images)
+    return #images > 0 and table.concat(images, ";") or "NO_IMAGE"
+end
+
+local function targetVisible(target)
+    return isVisible(target.object) and imageFingerprint(target.object) == target.fingerprint
+end
+
 local function updateStatus(message)
     status.Text = tostring(#targets) .. " targets recorded" .. (message and ("\n" .. message) or "")
 end
@@ -210,7 +242,7 @@ end
 
 local function clickTarget(target)
     local object = target.object
-    if target.busy or not isVisible(object) then return end
+    if target.busy or not targetVisible(target) then return end
     target.busy = true
     target.lastClick = os.clock()
     local position, size = object.AbsolutePosition, object.AbsoluteSize
@@ -298,7 +330,8 @@ connect(UserInputService.InputBegan, function(input)
     picked.object = clickableObject(picked.object, picked.root)
     local path = pathFrom(picked.root, picked.object)
     if not path then return end
-    local key = pathKey(picked.root, path)
+    local fingerprint = imageFingerprint(picked.object)
+    local key = pathKey(picked.root, path) .. "|" .. fingerprint
     local position, size = picked.object.AbsolutePosition, picked.object.AbsoluteSize
     local inputType = input.UserInputType == Enum.UserInputType.Touch and "Touch" or "Mouse"
     nextTouchId = nextTouchId + 1
@@ -308,13 +341,14 @@ connect(UserInputService.InputBegan, function(input)
         root = picked.root,
         path = path,
         object = picked.object,
+        fingerprint = fingerprint,
         x = math.clamp((point.X - position.X) / math.max(size.X, 1), 0, 1),
         y = math.clamp((point.Y - position.Y) / math.max(size.Y, 1), 0, 1),
         inputType = inputType,
         touchId = nextTouchId,
         touchActive = false,
         busy = false,
-        wasVisible = isVisible(picked.object),
+        wasVisible = true,
         hasDisappeared = false,
         lastClick = 0,
     }
@@ -325,15 +359,16 @@ connect(UserInputService.InputBegan, function(input)
     if not replaced then table.insert(targets, newTarget) end
     recording = false
     record.Text = "Add Target: Record Next Click"
-    updateStatus((replaced and "Updated: " or "Added: ") .. newTarget.name .. " [" .. inputType .. "]")
-    toast((replaced and "Updated " or "Added ") .. newTarget.name .. " as " .. inputType)
+    local imageStatus = fingerprint == "NO_IMAGE" and "no image" or "image captured"
+    updateStatus((replaced and "Updated: " or "Added: ") .. newTarget.name .. " [" .. imageStatus .. "]")
+    toast((replaced and "Updated " or "Added ") .. newTarget.name .. ": " .. imageStatus)
 end)
 
 connect(RunService.Heartbeat, function()
     local now = os.clock()
     for _, target in ipairs(targets) do
         if not target.object or not target.object.Parent then target.object = resolve(target.root, target.path) end
-        local visible = isVisible(target.object)
+        local visible = target.object and targetVisible(target)
         if not visible then
             target.hasDisappeared = true
         elseif not target.wasVisible and target.hasDisappeared then
