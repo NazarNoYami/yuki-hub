@@ -32,6 +32,9 @@ local targets, selectedIndex, calibrationOffset = {}, 1, nil
 local autoSkill, calibrating, brightOn, generatorOn, playerOn = false, false, false, false, false
 local accuracy, inputLead = 4, 0.04
 local playerVisuals, generatorVisuals = {}, {}
+local debugLines = {}
+local debugLiveText = "Prompt inactive"
+local debugLastUpdate = 0
 
 local function cleanup()
     for _, target in ipairs(targets) do
@@ -52,6 +55,76 @@ screen.Name = "YukiSkillUtility"
 screen.ResetOnSpawn = false
 screen.DisplayOrder = 999998
 screen.Parent = CoreGui
+
+local debugPanel = Instance.new("Frame")
+debugPanel.Size = UDim2.new(0, 286, 0, 286)
+debugPanel.Position = UDim2.new(0, 270, 0.5, -143)
+debugPanel.BackgroundColor3 = Color3.fromRGB(11, 14, 22)
+debugPanel.BackgroundTransparency = 0.04
+debugPanel.BorderSizePixel = 0
+debugPanel.Visible = false
+debugPanel.Parent = screen
+Instance.new("UICorner", debugPanel).CornerRadius = UDim.new(0, 10)
+local debugStroke = Instance.new("UIStroke", debugPanel)
+debugStroke.Color = Color3.fromRGB(225, 160, 70)
+debugStroke.Transparency = 0.3
+
+local debugTitle = Instance.new("TextLabel")
+debugTitle.Position = UDim2.new(0, 9, 0, 5)
+debugTitle.Size = UDim2.new(1, -18, 0, 20)
+debugTitle.BackgroundTransparency = 1
+debugTitle.Font = Enum.Font.SourceSansBold
+debugTitle.TextSize = 14
+debugTitle.TextColor3 = Color3.fromRGB(255, 210, 130)
+debugTitle.TextXAlignment = Enum.TextXAlignment.Left
+debugTitle.Text = "AUTO SKILL DEBUG"
+debugTitle.Parent = debugPanel
+
+local debugLive = Instance.new("TextLabel")
+debugLive.Position = UDim2.new(0, 9, 0, 29)
+debugLive.Size = UDim2.new(1, -18, 0, 78)
+debugLive.BackgroundColor3 = Color3.fromRGB(22, 26, 38)
+debugLive.BorderSizePixel = 0
+debugLive.Font = Enum.Font.Code
+debugLive.TextSize = 11
+debugLive.TextWrapped = true
+debugLive.TextColor3 = Color3.fromRGB(185, 205, 240)
+debugLive.TextXAlignment = Enum.TextXAlignment.Left
+debugLive.TextYAlignment = Enum.TextYAlignment.Top
+debugLive.Text = debugLiveText
+debugLive.Parent = debugPanel
+Instance.new("UICorner", debugLive).CornerRadius = UDim.new(0, 6)
+
+local debugLog = Instance.new("TextLabel")
+debugLog.Position = UDim2.new(0, 9, 0, 113)
+debugLog.Size = UDim2.new(1, -18, 1, -122)
+debugLog.BackgroundColor3 = Color3.fromRGB(18, 21, 31)
+debugLog.BorderSizePixel = 0
+debugLog.Font = Enum.Font.Code
+debugLog.TextSize = 10
+debugLog.TextWrapped = true
+debugLog.TextColor3 = Color3.fromRGB(190, 195, 210)
+debugLog.TextXAlignment = Enum.TextXAlignment.Left
+debugLog.TextYAlignment = Enum.TextYAlignment.Top
+debugLog.Text = ""
+debugLog.Parent = debugPanel
+Instance.new("UICorner", debugLog).CornerRadius = UDim.new(0, 6)
+
+local function addDebug(message)
+    local elapsed = os.clock()
+    table.insert(debugLines, string.format("[%06.2f] %s", elapsed % 1000, message))
+    while #debugLines > 11 do table.remove(debugLines, 1) end
+    debugLog.Text = table.concat(debugLines, "\n")
+end
+
+local function setDebugLive(text, force)
+    debugLiveText = text
+    local now = os.clock()
+    if force or now - debugLastUpdate >= 0.1 then
+        debugLastUpdate = now
+        debugLive.Text = debugLiveText
+    end
+end
 
 local panel = Instance.new("Frame")
 panel.Size = UDim2.new(0, 250, 0, 286)
@@ -230,15 +303,21 @@ local function fireSignals(object, x, y)
 end
 
 local function replayTarget(target)
-    if not target or target.busy then return end
+    if not target then addDebug("REPLAY fail: no target"); return end
+    if target.busy then addDebug("REPLAY skip: target busy"); return end
     if not target.object or not target.object.Parent then target.object = resolve(target.root, target.path) end
-    if not targetVisible(target) then status.Text = "Selected action icon is not visible"; return end
+    if not targetVisible(target) then
+        status.Text = "Selected action icon is not visible"
+        addDebug("REPLAY fail: icon/path not visible")
+        return
+    end
     target.busy = true
     local object, position, size = target.object, target.object.AbsolutePosition, target.object.AbsoluteSize
     local x, y = position.X + size.X * target.x, position.Y + size.Y * target.y
     target.lastX, target.lastY = x, y
     task.spawn(function()
-        fireSignals(object, x, y)
+        local signaled = fireSignals(object, x, y)
+        addDebug(string.format("REPLAY %s signal=%s input=%s", target.name, tostring(signaled), target.inputType))
         if target.inputType == "Touch" then
             target.touchActive = pcall(function() VirtualInputManager:SendTouchEvent(target.touchId, 0, x, y) end)
             task.wait(0.06)
@@ -261,16 +340,20 @@ connect(targetButton.MouseButton1Click, function()
     if #targets == 0 then return end
     selectedIndex = selectedIndex % #targets + 1
     targetButton.Text = "Target: " .. targets[selectedIndex].name
+    addDebug("TARGET selected: " .. targets[selectedIndex].name)
 end)
 
 connect(calibrateButton.MouseButton1Click, function()
     calibrating = true
     status.Text = "Calibration armed: make one correct manual hit"
+    addDebug("CALIBRATION armed")
 end)
 
 connect(autoButton.MouseButton1Click, function()
     autoSkill = not autoSkill
     setToggle(autoButton, "Auto Skill", autoSkill)
+    debugPanel.Visible = autoSkill
+    addDebug("AUTO " .. (autoSkill and "enabled" or "disabled"))
     if autoSkill and not calibrationOffset then status.Text = "Calibrate one manual hit first" end
 end)
 
@@ -322,21 +405,25 @@ connect(UserInputService.InputBegan, function(input, processed)
         pcall(writefile, CALIBRATION_FILE, HttpService:JSONEncode({offset = calibrationOffset}))
     end
     status.Text = string.format("Calibration saved: %.1f deg", calibrationOffset)
+    addDebug(string.format("CALIBRATION saved offset=%.2f", calibrationOffset))
 end)
 
 local skillGui, previousRotation, previousError, velocity, clickedPrompt = nil, nil, nil, 0, false
 local promptElapsed, promptArmed = 0, false
-local promptStatus
+local promptStatus, promptActive
 local scanTimer = 0
 local function resetPrompt()
+    if promptActive then addDebug("PROMPT ended") end
     previousRotation, previousError, velocity, clickedPrompt = nil, nil, 0, false
     promptElapsed, promptArmed = 0, false
-    promptStatus = nil
+    promptStatus, promptActive = nil, false
+    setDebugLive("Prompt inactive", true)
 end
 local function setPromptStatus(value)
     if promptStatus == value then return end
     promptStatus = value
     status.Text = "Skill: " .. value
+    addDebug("STATE -> " .. value)
 end
 connect(RunService.RenderStepped, function(dt)
     if brightOn then
@@ -352,10 +439,15 @@ connect(RunService.RenderStepped, function(dt)
         if not skillGui or not skillGui.Parent then
             skillGui = findSkillGui()
             resetPrompt()
+            if not skillGui then setDebugLive("Waiting for SkillCheckPromptGui") end
         end
         if skillGui and skillGui.Enabled then
             local line, goal = skillGui:FindFirstChild("Line", true), skillGui:FindFirstChild("Goal", true)
             if line and goal and goal.Rotation ~= 0 then
+                if not promptActive then
+                    promptActive = true
+                    addDebug("PROMPT started")
+                end
                 promptElapsed = promptElapsed + dt
                 setPromptStatus(promptArmed and "armed" or "waiting")
                 local rotation, goalRotation = line.AbsoluteRotation % 360, goal.AbsoluteRotation % 360
@@ -376,17 +468,26 @@ connect(RunService.RenderStepped, function(dt)
                     and math.abs(previousError) <= crossingRange
                     and math.abs(err) <= crossingRange
                     and previousError * err <= 0
+                setDebugLive(string.format(
+                    "state=%s armed=%s clicked=%s\nline=%.2f goal=%.2f targetOff=%.2f\nerror=%.2f vel=%.1f lead=%dms move=%s cross=%s",
+                    promptStatus or "waiting", tostring(promptArmed), tostring(clickedPrompt),
+                    rotation, goalRotation, calibrationOffset, err, velocity, math.floor(inputLead * 1000 + 0.5),
+                    tostring(moving), tostring(crossed)
+                ))
                 if promptArmed and not clickedPrompt and moving and (math.abs(err) <= accuracy or crossed) then
                     clickedPrompt = true
                     setPromptStatus("clicked")
+                    addDebug(string.format("TRIGGER error=%.2f crossed=%s", err, tostring(crossed)))
                     replayTarget(selectedTarget())
                 end
                 previousRotation, previousError = rotation, err
             else
                 resetPrompt()
+                if not line or not goal then setDebugLive("Prompt GUI found; missing Line/Goal") end
             end
         else
             resetPrompt()
+            if skillGui then setDebugLive("SkillCheckPromptGui disabled") end
         end
     elseif previousRotation or promptElapsed > 0 then
         resetPrompt()
@@ -449,3 +550,6 @@ end)
 loadTargets()
 loadCalibration()
 if calibrationOffset then status.Text = status.Text .. " | calibrated" end
+addDebug("INIT targets=" .. tostring(#targets))
+addDebug(calibrationOffset and string.format("INIT calibration=%.2f", calibrationOffset) or "INIT no calibration")
+if targets[1] then addDebug("INIT target=" .. targets[1].name) end
