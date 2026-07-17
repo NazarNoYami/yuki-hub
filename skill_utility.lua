@@ -325,7 +325,19 @@ connect(UserInputService.InputBegan, function(input, processed)
 end)
 
 local skillGui, previousRotation, previousError, velocity, clickedPrompt = nil, nil, nil, 0, false
+local promptElapsed, promptArmed = 0, false
+local promptStatus
 local scanTimer = 0
+local function resetPrompt()
+    previousRotation, previousError, velocity, clickedPrompt = nil, nil, 0, false
+    promptElapsed, promptArmed = 0, false
+    promptStatus = nil
+end
+local function setPromptStatus(value)
+    if promptStatus == value then return end
+    promptStatus = value
+    status.Text = "Skill: " .. value
+end
 connect(RunService.RenderStepped, function(dt)
     if brightOn then
         Lighting.Ambient = Color3.new(1, 1, 1)
@@ -338,11 +350,14 @@ connect(RunService.RenderStepped, function(dt)
 
     if autoSkill and calibrationOffset and selectedTarget() then
         if not skillGui or not skillGui.Parent then
-            skillGui = findSkillGui(); previousRotation = nil; previousError = nil; velocity = 0; clickedPrompt = false
+            skillGui = findSkillGui()
+            resetPrompt()
         end
         if skillGui and skillGui.Enabled then
             local line, goal = skillGui:FindFirstChild("Line", true), skillGui:FindFirstChild("Goal", true)
             if line and goal and goal.Rotation ~= 0 then
+                promptElapsed = promptElapsed + dt
+                setPromptStatus(promptArmed and "armed" or "waiting")
                 local rotation, goalRotation = line.AbsoluteRotation % 360, goal.AbsoluteRotation % 360
                 if previousRotation and dt > 0 then
                     local measured = angularDifference(rotation, previousRotation) / dt
@@ -350,18 +365,31 @@ connect(RunService.RenderStepped, function(dt)
                 end
                 local difference = angularDifference(rotation + velocity * inputLead, goalRotation)
                 local err = angularDifference(difference, calibrationOffset)
-                local crossed = previousError and math.abs(angularDifference(err, previousError)) < 45 and previousError * err <= 0
-                if not clickedPrompt and (math.abs(err) <= accuracy or crossed) then
+                local moving = math.abs(velocity) >= 15
+                if promptElapsed >= 0.18 and moving and math.abs(err) >= math.max(accuracy + 8, 12) then
+                    promptArmed = true
+                    setPromptStatus("armed")
+                end
+                -- Both samples must be near the calibrated point. This rejects the 180/-180 wrap.
+                local crossingRange = math.max(accuracy * 4, 20)
+                local crossed = previousError
+                    and math.abs(previousError) <= crossingRange
+                    and math.abs(err) <= crossingRange
+                    and previousError * err <= 0
+                if promptArmed and not clickedPrompt and moving and (math.abs(err) <= accuracy or crossed) then
                     clickedPrompt = true
+                    setPromptStatus("clicked")
                     replayTarget(selectedTarget())
                 end
                 previousRotation, previousError = rotation, err
             else
-                previousRotation, previousError, velocity, clickedPrompt = nil, nil, 0, false
+                resetPrompt()
             end
         else
-            previousRotation, previousError, velocity, clickedPrompt = nil, nil, 0, false
+            resetPrompt()
         end
+    elseif previousRotation or promptElapsed > 0 then
+        resetPrompt()
     end
 
     scanTimer = scanTimer + dt
