@@ -93,8 +93,18 @@ local clickAppearOn = false
 local clickVisibleOn = false
 local targets = {}
 local connections = {}
+local nextTouchId = 100
+
+local function releaseTarget(target)
+    if target.touchActive then
+        pcall(function() VirtualInputManager:SendTouchEvent(target.touchId, 2, target.lastX, target.lastY) end)
+        target.touchActive = false
+    end
+    target.busy = false
+end
 
 local function cleanup()
+    for _, target in ipairs(targets) do releaseTarget(target) end
     for _, connection in ipairs(connections) do pcall(function() connection:Disconnect() end) end
     if screen.Parent then screen:Destroy() end
     _G.YukiButtonDetectorCleanup = nil
@@ -176,17 +186,29 @@ end
 
 local function clickTarget(target)
     local object = target.object
-    if not isVisible(object) then return end
+    if target.busy or not isVisible(object) then return end
+    target.busy = true
     target.lastClick = os.clock()
     local position, size = object.AbsolutePosition, object.AbsoluteSize
     local x = position.X + size.X * target.x
     local y = position.Y + size.Y * target.y
+    target.lastX, target.lastY = x, y
     task.spawn(function()
-        pcall(function()
-            VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+        if target.inputType == "Touch" then
+            target.touchActive = pcall(function() VirtualInputManager:SendTouchEvent(target.touchId, 0, x, y) end)
+            task.wait(0.06)
+            pcall(function() VirtualInputManager:SendTouchEvent(target.touchId, 2, x, y) end)
+            target.touchActive = false
+        else
+            pcall(function()
+                VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+            end)
             task.wait(0.04)
-            VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
-        end)
+            pcall(function()
+                VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+            end)
+        end
+        target.busy = false
     end)
 end
 
@@ -197,6 +219,7 @@ record.MouseButton1Click:Connect(function()
 end)
 
 clear.MouseButton1Click:Connect(function()
+    for _, target in ipairs(targets) do releaseTarget(target) end
     targets = {}
     recording = false
     record.Text = "Add Target: Record Next Click"
@@ -232,6 +255,8 @@ connect(UserInputService.InputBegan, function(input)
     if not path then return end
     local key = pathKey(picked.root, path)
     local position, size = picked.object.AbsolutePosition, picked.object.AbsoluteSize
+    local inputType = input.UserInputType == Enum.UserInputType.Touch and "Touch" or "Mouse"
+    nextTouchId = nextTouchId + 1
     local newTarget = {
         key = key,
         name = picked.object.Name,
@@ -240,19 +265,23 @@ connect(UserInputService.InputBegan, function(input)
         object = picked.object,
         x = math.clamp((point.X - position.X) / math.max(size.X, 1), 0, 1),
         y = math.clamp((point.Y - position.Y) / math.max(size.Y, 1), 0, 1),
+        inputType = inputType,
+        touchId = nextTouchId,
+        touchActive = false,
+        busy = false,
         wasVisible = isVisible(picked.object),
         hasDisappeared = false,
         lastClick = 0,
     }
     local replaced = false
     for index, target in ipairs(targets) do
-        if target.key == key then targets[index] = newTarget; replaced = true; break end
+        if target.key == key then releaseTarget(target); targets[index] = newTarget; replaced = true; break end
     end
     if not replaced then table.insert(targets, newTarget) end
     recording = false
     record.Text = "Add Target: Record Next Click"
-    updateStatus((replaced and "Updated: " or "Added: ") .. newTarget.name)
-    toast((replaced and "Updated " or "Added ") .. newTarget.name)
+    updateStatus((replaced and "Updated: " or "Added: ") .. newTarget.name .. " [" .. inputType .. "]")
+    toast((replaced and "Updated " or "Added ") .. newTarget.name .. " as " .. inputType)
 end)
 
 connect(RunService.Heartbeat, function()
