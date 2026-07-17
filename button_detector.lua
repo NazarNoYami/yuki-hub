@@ -180,6 +180,15 @@ local function objectsAt(x, y)
     return objects
 end
 
+local function clickableObject(object, root)
+    local current = object
+    while current and current ~= root do
+        if current:IsA("GuiButton") then return current end
+        current = current.Parent
+    end
+    return object
+end
+
 local function updateStatus(message)
     status.Text = tostring(#targets) .. " targets recorded" .. (message and ("\n" .. message) or "")
 end
@@ -194,12 +203,33 @@ local function clickTarget(target)
     local y = position.Y + size.Y * target.y
     target.lastX, target.lastY = x, y
     task.spawn(function()
-        if target.inputType == "Touch" then
-            target.touchActive = pcall(function() VirtualInputManager:SendTouchEvent(target.touchId, 0, x, y) end)
+        local activated = false
+        local lowerName = (target.name .. "/" .. table.concat(target.path, "/")):lower()
+        if lowerName:find("jump") then
+            local character = Players.LocalPlayer.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.Jump = true
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                activated = true
+                target.method = "Humanoid Jump"
+            end
+        end
+        if not activated and object:IsA("GuiButton") and type(firesignal) == "function" then
+            activated = pcall(function()
+                firesignal(object.Activated)
+            end)
+            if activated then target.method = "GuiButton signal" end
+        end
+        if not activated and target.inputType == "Touch" then
+            local began = pcall(function() VirtualInputManager:SendTouchEvent(target.touchId, 0, x, y) end)
+            target.touchActive = began
             task.wait(0.06)
-            pcall(function() VirtualInputManager:SendTouchEvent(target.touchId, 2, x, y) end)
+            local ended = pcall(function() VirtualInputManager:SendTouchEvent(target.touchId, 2, x, y) end)
             target.touchActive = false
-        else
+            activated = began and ended
+            if activated then target.method = "Virtual touch" end
+        elseif not activated then
             pcall(function()
                 VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
             end)
@@ -207,7 +237,9 @@ local function clickTarget(target)
             pcall(function()
                 VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
             end)
+            target.method = "Virtual mouse"
         end
+        if target.method then updateStatus(target.name .. " via " .. target.method) end
         target.busy = false
     end)
 end
@@ -251,6 +283,7 @@ connect(UserInputService.InputBegan, function(input)
     local picked = objectsAt(point.X, point.Y)[1]
     if not picked then updateStatus("No game GUI found there"); return end
 
+    picked.object = clickableObject(picked.object, picked.root)
     local path = pathFrom(picked.root, picked.object)
     if not path then return end
     local key = pathKey(picked.root, path)
