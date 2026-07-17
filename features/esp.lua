@@ -154,7 +154,7 @@ OE:Toggle({ Title = "Generator ESP", Callback = function(s)
     genOn = s
     if not s then
         for _, v in pairs(genH) do pcall(function() v:Destroy() end) end; ClearTable(genH)
-        for _, v in pairs(genL) do pcall(function() v.Parent:Destroy() end) end; ClearTable(genL)
+        for _, v in pairs(genL) do pcall(function() v:Destroy() end) end; ClearTable(genL)
     end
 end})
 OE:Space()
@@ -451,34 +451,69 @@ YH.Connect(YH.RunService.RenderStepped, function(dt)
                 hl.FillColor = Color3.new(1, 1, 1); hl.OutlineColor = Color3.new(1, 1, 1)
                 hl.Parent = YH.CoreGui; genH[obj] = hl
                 local bill = Instance.new("BillboardGui")
-                bill.Size = UDim2.new(0, 170, 0, 38)
+                bill.Name = "YukiGeneratorCard"
+                bill.Size = UDim2.new(0, 190, 0, 64)
                 bill.StudsOffset = Vector3.new(0, 4, 0)
                 bill.AlwaysOnTop = true; bill.Parent = YH.CoreGui
-                local txt = Instance.new("TextLabel")
-                txt.Size = UDim2.new(1, 0, 1, 0); txt.BackgroundTransparency = 1
-                txt.Font = Enum.Font.SourceSansSemibold; txt.TextSize = 14
-                txt.TextStrokeTransparency = 0.4; txt.TextStrokeColor3 = Color3.new(0, 0, 0)
-                txt.TextXAlignment = Enum.TextXAlignment.Center
-                txt.Parent = bill; genL[obj] = txt
+                local card = Instance.new("Frame")
+                card.Name = "Card"; card.Size = UDim2.fromScale(1, 1)
+                card.BackgroundColor3 = Color3.fromRGB(15, 18, 28); card.BackgroundTransparency = 0.12
+                card.BorderSizePixel = 0; card.Parent = bill
+                Instance.new("UICorner", card).CornerRadius = UDim.new(0, 9)
+                local stroke = Instance.new("UIStroke", card)
+                stroke.Color = Color3.fromRGB(95, 115, 175); stroke.Transparency = 0.35; stroke.Thickness = 1
+                local title = Instance.new("TextLabel")
+                title.Name = "Title"; title.Position = UDim2.new(0, 10, 0, 6); title.Size = UDim2.new(1, -62, 0, 17)
+                title.BackgroundTransparency = 1; title.Font = Enum.Font.SourceSansSemibold; title.TextSize = 14
+                title.TextColor3 = Color3.fromRGB(235, 240, 255); title.TextXAlignment = Enum.TextXAlignment.Left
+                title.Text = "GENERATOR"; title.Parent = card
+                local percent = Instance.new("TextLabel")
+                percent.Name = "Percent"; percent.Position = UDim2.new(1, -52, 0, 6); percent.Size = UDim2.new(0, 42, 0, 17)
+                percent.BackgroundTransparency = 1; percent.Font = Enum.Font.SourceSansBold; percent.TextSize = 14
+                percent.TextColor3 = Color3.fromRGB(125, 220, 255); percent.TextXAlignment = Enum.TextXAlignment.Right
+                percent.Parent = card
+                local track = Instance.new("Frame")
+                track.Name = "Track"; track.Position = UDim2.new(0, 10, 0, 29); track.Size = UDim2.new(1, -20, 0, 9)
+                track.BackgroundColor3 = Color3.fromRGB(39, 44, 61); track.BorderSizePixel = 0; track.ClipsDescendants = true; track.Parent = card
+                Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+                local fill = Instance.new("Frame")
+                fill.Name = "Fill"; fill.Size = UDim2.fromScale(0, 1); fill.BackgroundColor3 = Color3.fromRGB(255, 95, 105)
+                fill.BorderSizePixel = 0; fill.Parent = track
+                Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+                local gradient = Instance.new("UIGradient", fill)
+                gradient.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(205, 225, 255))
+                local status = Instance.new("TextLabel")
+                status.Name = "Status"; status.Position = UDim2.new(0, 10, 0, 42); status.Size = UDim2.new(1, -20, 0, 15)
+                status.BackgroundTransparency = 1; status.Font = Enum.Font.SourceSans; status.TextSize = 12
+                status.TextColor3 = Color3.fromRGB(165, 175, 205); status.TextXAlignment = Enum.TextXAlignment.Left
+                status.Parent = card
+                genL[obj] = bill
             end
             genH[obj].Adornee = obj
-            genL[obj].Parent.Adornee = att
-            local txt = genL[obj]
+            local bill = genL[obj]
+            bill.Adornee = att
+            local card = bill.Card
+            local percent = card.Percent
+            local fill = card.Track.Fill
+            local status = card.Status
+            local ratio = math.clamp(progress / 100, 0, 1)
+            local color = ratio < 0.5
+                and Color3.fromRGB(255, 90, 105):Lerp(Color3.fromRGB(255, 205, 85), ratio * 2)
+                or Color3.fromRGB(255, 205, 85):Lerp(Color3.fromRGB(85, 235, 145), (ratio - 0.5) * 2)
+            fill.Size = UDim2.fromScale(ratio, 1)
+            fill.BackgroundColor3 = color
+            percent.Text = string.format("%.0f%%", progress)
+            percent.TextColor3 = color
+            status.Text = repairing > 0 and (tostring(repairing) .. " repairing") or "Ready for repair"
             if full then
-                txt.Text = "Generator\n100.0%"
-                txt.TextColor3 = Color3.fromRGB(0, 255, 0)
-                genH[obj].FillColor = Color3.fromRGB(0, 255, 0)
-                genH[obj].OutlineColor = Color3.fromRGB(0, 255, 0)
+                status.Text = "COMPLETED"
+                status.TextColor3 = Color3.fromRGB(100, 245, 155)
+                genH[obj].FillColor = Color3.fromRGB(85, 235, 145)
+                genH[obj].OutlineColor = Color3.fromRGB(85, 235, 145)
             else
-                local g = math.clamp(progress / 100, 0, 1)
-                txt.TextColor3 = Color3.new(1 - g * 0.7, 1, 1 - g * 0.7)
-                if repairing > 0 then
-                    txt.Text = string.format("Generator\n%.1f%% [%d]", progress, repairing)
-                else
-                    txt.Text = string.format("Generator\n%.1f%%", progress)
-                end
-                genH[obj].FillColor = Color3.new(1, 1, 1)
-                genH[obj].OutlineColor = Color3.new(1, 1, 1)
+                status.TextColor3 = repairing > 0 and Color3.fromRGB(125, 205, 255) or Color3.fromRGB(165, 175, 205)
+                genH[obj].FillColor = color
+                genH[obj].OutlineColor = color
             end
         end
     end
@@ -572,6 +607,8 @@ YH.OnCleanup(function()
         for _, object in pairs(group) do pcall(function() object:Destroy() end) end
     end
     for _, group in ipairs({playerLabels, genL, hookL, gateL, winL}) do
-        for _, label in pairs(group) do pcall(function() label.Parent:Destroy() end) end
+        for _, label in pairs(group) do pcall(function()
+            if label:IsA("BillboardGui") then label:Destroy() else label.Parent:Destroy() end
+        end) end
     end
 end)

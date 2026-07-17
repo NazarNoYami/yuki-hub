@@ -27,11 +27,24 @@ crosshair:Space()
 crosshair:Slider({Title = "Thickness", Width = 200, Value = {Min = 1, Max = 6, Default = 2}, Step = 1, Callback = function(value) YH.chW = value end})
 
 local skill = T:Section({Title = "Skill Check"})
-YH.skillInput = "Mouse"
 YH.skillTolerance = 18
-skill:Toggle({Title = "Auto Skill Check", Desc = "Clicks once when the needle enters the goal", Callback = function(value) YH.skillOn = value end})
+YH.skillRecorded = nil
+YH.skillRecording = false
+skill:Button({Title = "Record Next Input", Desc = "Open a skill check, then press or click it once", Callback = function()
+    YH.skillRecording = true
+    warn("[Yuki] Skill input recorder armed")
+end})
 skill:Space()
-skill:Dropdown({Title = "Input", Values = {"Mouse", "Space"}, Value = 1, Callback = function(value) YH.skillInput = value end})
+skill:Button({Title = "Clear Recorded Input", Callback = function()
+    YH.skillRecorded = nil
+    YH.skillRecording = false
+    warn("[Yuki] Recorded skill input cleared")
+end})
+skill:Space()
+skill:Toggle({Title = "Auto Skill Check", Desc = "Replays the recorded input inside the goal", Callback = function(value)
+    if value and not YH.skillRecorded then warn("[Yuki] Record one manual skill input first") end
+    YH.skillOn = value
+end})
 skill:Space()
 skill:Slider({Title = "Tolerance", Desc = "Increase if clicks are late", Width = 200, Value = {Min = 8, Max = 30, Default = 18}, Step = 1, Callback = function(value) YH.skillTolerance = value end})
 
@@ -67,16 +80,56 @@ local function findSkillGui()
     return (playerGui and playerGui:FindFirstChild("SkillCheckPromptGui")) or YH.CoreGui:FindFirstChild("SkillCheckPromptGui")
 end
 
+local function activeSkillCheck()
+    local gui = findSkillGui()
+    if not gui or not gui.Enabled then return nil end
+    local check = gui:FindFirstChild("Check", true)
+    if check and check:IsA("GuiObject") then return gui, check end
+end
+
+YH.Connect(YH.UserInputService.InputBegan, function(input)
+    if not YH.skillRecording then return end
+    local _, check = activeSkillCheck()
+    if not check then return end
+
+    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
+        YH.skillRecorded = {kind = "Key", key = input.KeyCode}
+        YH.skillRecording = false
+        warn("[Yuki] Recorded skill key: " .. input.KeyCode.Name)
+        return
+    end
+
+    local button
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then button = 0
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 then button = 1
+    elseif input.UserInputType == Enum.UserInputType.MouseButton3 then button = 2 end
+    if button == nil then return end
+
+    local position, size = check.AbsolutePosition, check.AbsoluteSize
+    local pointer = YH.UserInputService:GetMouseLocation()
+    if input.UserInputType == Enum.UserInputType.Touch then pointer = input.Position end
+    YH.skillRecorded = {
+        kind = "Pointer",
+        button = button,
+        x = math.clamp((pointer.X - position.X) / math.max(size.X, 1), 0, 1),
+        y = math.clamp((pointer.Y - position.Y) / math.max(size.Y, 1), 0, 1),
+    }
+    YH.skillRecording = false
+    warn("[Yuki] Recorded skill pointer input")
+end)
+
 local function sendSkillInput(check)
-    if YH.skillInput == "Space" then
-        YH.VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-        task.delay(0.04, function() pcall(function() YH.VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game) end) end)
+    local recorded = YH.skillRecorded
+    if not recorded then return end
+    if recorded.kind == "Key" then
+        YH.VirtualInputManager:SendKeyEvent(true, recorded.key, false, game)
+        task.delay(0.04, function() pcall(function() YH.VirtualInputManager:SendKeyEvent(false, recorded.key, false, game) end) end)
         return
     end
     local position, size = check.AbsolutePosition, check.AbsoluteSize
-    local x, y = position.X + size.X / 2, position.Y + size.Y / 2
-    YH.VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-    task.delay(0.04, function() pcall(function() YH.VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0) end) end)
+    local x, y = position.X + size.X * recorded.x, position.Y + size.Y * recorded.y
+    YH.VirtualInputManager:SendMouseButtonEvent(x, y, recorded.button, true, game, 0)
+    task.delay(0.04, function() pcall(function() YH.VirtualInputManager:SendMouseButtonEvent(x, y, recorded.button, false, game, 0) end) end)
 end
 
 YH.Connect(YH.RunService.RenderStepped, function()
@@ -93,7 +146,7 @@ YH.Connect(YH.RunService.RenderStepped, function()
         setCrosshairVisible(false)
     end
 
-    if not YH.skillOn then skillGui = nil; previousRotation = nil; armed = true; return end
+    if not YH.skillOn or not YH.skillRecorded then skillGui = nil; previousRotation = nil; armed = true; return end
     if not skillGui or not skillGui.Parent then skillGui = findSkillGui(); previousRotation = nil; armed = true end
     if not skillGui or not skillGui.Enabled then previousRotation = nil; armed = true; return end
     local check = skillGui:FindFirstChild("Check", true)

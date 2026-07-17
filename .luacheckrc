@@ -10,7 +10,7 @@ globals = {
   "_G",
   "game", "workspace",
   "Instance", "Drawing",
-  "Color3", "Vector2", "Vector3", "UDim2",
+  "Color3", "ColorSequence", "Vector2", "Vector3", "UDim2",
   "Enum", "UDim",
   "task", "typeof",
   "loadstring", "mousemoverel", "setfpscap",

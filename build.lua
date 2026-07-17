@@ -393,7 +393,7 @@ OE:Toggle({ Title = "Generator ESP", Callback = function(s)
     genOn = s
     if not s then
         for _, v in pairs(genH) do pcall(function() v:Destroy() end) end; ClearTable(genH)
-        for _, v in pairs(genL) do pcall(function() v.Parent:Destroy() end) end; ClearTable(genL)
+        for _, v in pairs(genL) do pcall(function() v:Destroy() end) end; ClearTable(genL)
     end
 end})
 OE:Space()
@@ -690,34 +690,69 @@ YH.Connect(YH.RunService.RenderStepped, function(dt)
                 hl.FillColor = Color3.new(1, 1, 1); hl.OutlineColor = Color3.new(1, 1, 1)
                 hl.Parent = YH.CoreGui; genH[obj] = hl
                 local bill = Instance.new("BillboardGui")
-                bill.Size = UDim2.new(0, 170, 0, 38)
+                bill.Name = "YukiGeneratorCard"
+                bill.Size = UDim2.new(0, 190, 0, 64)
                 bill.StudsOffset = Vector3.new(0, 4, 0)
                 bill.AlwaysOnTop = true; bill.Parent = YH.CoreGui
-                local txt = Instance.new("TextLabel")
-                txt.Size = UDim2.new(1, 0, 1, 0); txt.BackgroundTransparency = 1
-                txt.Font = Enum.Font.SourceSansSemibold; txt.TextSize = 14
-                txt.TextStrokeTransparency = 0.4; txt.TextStrokeColor3 = Color3.new(0, 0, 0)
-                txt.TextXAlignment = Enum.TextXAlignment.Center
-                txt.Parent = bill; genL[obj] = txt
+                local card = Instance.new("Frame")
+                card.Name = "Card"; card.Size = UDim2.fromScale(1, 1)
+                card.BackgroundColor3 = Color3.fromRGB(15, 18, 28); card.BackgroundTransparency = 0.12
+                card.BorderSizePixel = 0; card.Parent = bill
+                Instance.new("UICorner", card).CornerRadius = UDim.new(0, 9)
+                local stroke = Instance.new("UIStroke", card)
+                stroke.Color = Color3.fromRGB(95, 115, 175); stroke.Transparency = 0.35; stroke.Thickness = 1
+                local title = Instance.new("TextLabel")
+                title.Name = "Title"; title.Position = UDim2.new(0, 10, 0, 6); title.Size = UDim2.new(1, -62, 0, 17)
+                title.BackgroundTransparency = 1; title.Font = Enum.Font.SourceSansSemibold; title.TextSize = 14
+                title.TextColor3 = Color3.fromRGB(235, 240, 255); title.TextXAlignment = Enum.TextXAlignment.Left
+                title.Text = "GENERATOR"; title.Parent = card
+                local percent = Instance.new("TextLabel")
+                percent.Name = "Percent"; percent.Position = UDim2.new(1, -52, 0, 6); percent.Size = UDim2.new(0, 42, 0, 17)
+                percent.BackgroundTransparency = 1; percent.Font = Enum.Font.SourceSansBold; percent.TextSize = 14
+                percent.TextColor3 = Color3.fromRGB(125, 220, 255); percent.TextXAlignment = Enum.TextXAlignment.Right
+                percent.Parent = card
+                local track = Instance.new("Frame")
+                track.Name = "Track"; track.Position = UDim2.new(0, 10, 0, 29); track.Size = UDim2.new(1, -20, 0, 9)
+                track.BackgroundColor3 = Color3.fromRGB(39, 44, 61); track.BorderSizePixel = 0; track.ClipsDescendants = true; track.Parent = card
+                Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+                local fill = Instance.new("Frame")
+                fill.Name = "Fill"; fill.Size = UDim2.fromScale(0, 1); fill.BackgroundColor3 = Color3.fromRGB(255, 95, 105)
+                fill.BorderSizePixel = 0; fill.Parent = track
+                Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+                local gradient = Instance.new("UIGradient", fill)
+                gradient.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(205, 225, 255))
+                local status = Instance.new("TextLabel")
+                status.Name = "Status"; status.Position = UDim2.new(0, 10, 0, 42); status.Size = UDim2.new(1, -20, 0, 15)
+                status.BackgroundTransparency = 1; status.Font = Enum.Font.SourceSans; status.TextSize = 12
+                status.TextColor3 = Color3.fromRGB(165, 175, 205); status.TextXAlignment = Enum.TextXAlignment.Left
+                status.Parent = card
+                genL[obj] = bill
             end
             genH[obj].Adornee = obj
-            genL[obj].Parent.Adornee = att
-            local txt = genL[obj]
+            local bill = genL[obj]
+            bill.Adornee = att
+            local card = bill.Card
+            local percent = card.Percent
+            local fill = card.Track.Fill
+            local status = card.Status
+            local ratio = math.clamp(progress / 100, 0, 1)
+            local color = ratio < 0.5
+                and Color3.fromRGB(255, 90, 105):Lerp(Color3.fromRGB(255, 205, 85), ratio * 2)
+                or Color3.fromRGB(255, 205, 85):Lerp(Color3.fromRGB(85, 235, 145), (ratio - 0.5) * 2)
+            fill.Size = UDim2.fromScale(ratio, 1)
+            fill.BackgroundColor3 = color
+            percent.Text = string.format("%.0f%%", progress)
+            percent.TextColor3 = color
+            status.Text = repairing > 0 and (tostring(repairing) .. " repairing") or "Ready for repair"
             if full then
-                txt.Text = "Generator\n100.0%"
-                txt.TextColor3 = Color3.fromRGB(0, 255, 0)
-                genH[obj].FillColor = Color3.fromRGB(0, 255, 0)
-                genH[obj].OutlineColor = Color3.fromRGB(0, 255, 0)
+                status.Text = "COMPLETED"
+                status.TextColor3 = Color3.fromRGB(100, 245, 155)
+                genH[obj].FillColor = Color3.fromRGB(85, 235, 145)
+                genH[obj].OutlineColor = Color3.fromRGB(85, 235, 145)
             else
-                local g = math.clamp(progress / 100, 0, 1)
-                txt.TextColor3 = Color3.new(1 - g * 0.7, 1, 1 - g * 0.7)
-                if repairing > 0 then
-                    txt.Text = string.format("Generator\n%.1f%% [%d]", progress, repairing)
-                else
-                    txt.Text = string.format("Generator\n%.1f%%", progress)
-                end
-                genH[obj].FillColor = Color3.new(1, 1, 1)
-                genH[obj].OutlineColor = Color3.new(1, 1, 1)
+                status.TextColor3 = repairing > 0 and Color3.fromRGB(125, 205, 255) or Color3.fromRGB(165, 175, 205)
+                genH[obj].FillColor = color
+                genH[obj].OutlineColor = color
             end
         end
     end
@@ -811,7 +846,9 @@ YH.OnCleanup(function()
         for _, object in pairs(group) do pcall(function() object:Destroy() end) end
     end
     for _, group in ipairs({playerLabels, genL, hookL, gateL, winL}) do
-        for _, label in pairs(group) do pcall(function() label.Parent:Destroy() end) end
+        for _, label in pairs(group) do pcall(function()
+            if label:IsA("BillboardGui") then label:Destroy() else label.Parent:Destroy() end
+        end) end
     end
 end)
 
@@ -962,11 +999,24 @@ crosshair:Space()
 crosshair:Slider({Title = "Thickness", Width = 200, Value = {Min = 1, Max = 6, Default = 2}, Step = 1, Callback = function(value) YH.chW = value end})
 
 local skill = T:Section({Title = "Skill Check"})
-YH.skillInput = "Mouse"
 YH.skillTolerance = 18
-skill:Toggle({Title = "Auto Skill Check", Desc = "Clicks once when the needle enters the goal", Callback = function(value) YH.skillOn = value end})
+YH.skillRecorded = nil
+YH.skillRecording = false
+skill:Button({Title = "Record Next Input", Desc = "Open a skill check, then press or click it once", Callback = function()
+    YH.skillRecording = true
+    warn("[Yuki] Skill input recorder armed")
+end})
 skill:Space()
-skill:Dropdown({Title = "Input", Values = {"Mouse", "Space"}, Value = 1, Callback = function(value) YH.skillInput = value end})
+skill:Button({Title = "Clear Recorded Input", Callback = function()
+    YH.skillRecorded = nil
+    YH.skillRecording = false
+    warn("[Yuki] Recorded skill input cleared")
+end})
+skill:Space()
+skill:Toggle({Title = "Auto Skill Check", Desc = "Replays the recorded input inside the goal", Callback = function(value)
+    if value and not YH.skillRecorded then warn("[Yuki] Record one manual skill input first") end
+    YH.skillOn = value
+end})
 skill:Space()
 skill:Slider({Title = "Tolerance", Desc = "Increase if clicks are late", Width = 200, Value = {Min = 8, Max = 30, Default = 18}, Step = 1, Callback = function(value) YH.skillTolerance = value end})
 
@@ -1002,16 +1052,56 @@ local function findSkillGui()
     return (playerGui and playerGui:FindFirstChild("SkillCheckPromptGui")) or YH.CoreGui:FindFirstChild("SkillCheckPromptGui")
 end
 
+local function activeSkillCheck()
+    local gui = findSkillGui()
+    if not gui or not gui.Enabled then return nil end
+    local check = gui:FindFirstChild("Check", true)
+    if check and check:IsA("GuiObject") then return gui, check end
+end
+
+YH.Connect(YH.UserInputService.InputBegan, function(input)
+    if not YH.skillRecording then return end
+    local _, check = activeSkillCheck()
+    if not check then return end
+
+    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
+        YH.skillRecorded = {kind = "Key", key = input.KeyCode}
+        YH.skillRecording = false
+        warn("[Yuki] Recorded skill key: " .. input.KeyCode.Name)
+        return
+    end
+
+    local button
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then button = 0
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 then button = 1
+    elseif input.UserInputType == Enum.UserInputType.MouseButton3 then button = 2 end
+    if button == nil then return end
+
+    local position, size = check.AbsolutePosition, check.AbsoluteSize
+    local pointer = YH.UserInputService:GetMouseLocation()
+    if input.UserInputType == Enum.UserInputType.Touch then pointer = input.Position end
+    YH.skillRecorded = {
+        kind = "Pointer",
+        button = button,
+        x = math.clamp((pointer.X - position.X) / math.max(size.X, 1), 0, 1),
+        y = math.clamp((pointer.Y - position.Y) / math.max(size.Y, 1), 0, 1),
+    }
+    YH.skillRecording = false
+    warn("[Yuki] Recorded skill pointer input")
+end)
+
 local function sendSkillInput(check)
-    if YH.skillInput == "Space" then
-        YH.VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-        task.delay(0.04, function() pcall(function() YH.VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game) end) end)
+    local recorded = YH.skillRecorded
+    if not recorded then return end
+    if recorded.kind == "Key" then
+        YH.VirtualInputManager:SendKeyEvent(true, recorded.key, false, game)
+        task.delay(0.04, function() pcall(function() YH.VirtualInputManager:SendKeyEvent(false, recorded.key, false, game) end) end)
         return
     end
     local position, size = check.AbsolutePosition, check.AbsoluteSize
-    local x, y = position.X + size.X / 2, position.Y + size.Y / 2
-    YH.VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-    task.delay(0.04, function() pcall(function() YH.VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0) end) end)
+    local x, y = position.X + size.X * recorded.x, position.Y + size.Y * recorded.y
+    YH.VirtualInputManager:SendMouseButtonEvent(x, y, recorded.button, true, game, 0)
+    task.delay(0.04, function() pcall(function() YH.VirtualInputManager:SendMouseButtonEvent(x, y, recorded.button, false, game, 0) end) end)
 end
 
 YH.Connect(YH.RunService.RenderStepped, function()
@@ -1028,7 +1118,7 @@ YH.Connect(YH.RunService.RenderStepped, function()
         setCrosshairVisible(false)
     end
 
-    if not YH.skillOn then skillGui = nil; previousRotation = nil; armed = true; return end
+    if not YH.skillOn or not YH.skillRecorded then skillGui = nil; previousRotation = nil; armed = true; return end
     if not skillGui or not skillGui.Parent then skillGui = findSkillGui(); previousRotation = nil; armed = true end
     if not skillGui or not skillGui.Enabled then previousRotation = nil; armed = true; return end
     local check = skillGui:FindFirstChild("Check", true)
