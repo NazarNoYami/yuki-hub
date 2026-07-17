@@ -1,102 +1,119 @@
--- Misc Tab
 local YH = _G.YH
 local T = YH.Tabs.Misc
 
-local MS = T:Section({ Title = "Movement" })
-MS:Toggle({ Title = "Speedhack", Callback = function(s) YH.spdOn = s end })
-MS:Space()
-MS:Slider({ Title = "Speed Value", Width = 200, Value = { Min=16, Max=100, Default=32 }, Step = 1, Callback = function(v) YH.spdVal = v end })
-MS:Space()
-MS:Toggle({ Title = "Sprint Speed", Desc = "Faster while holding Shift", Callback = function(s) YH.sprintOn = s end })
-MS:Space()
-MS:Slider({ Title = "Sprint Boost", Width = 200, Value = { Min=1.0, Max=2.0, Default=1.05 }, Step = 0.05, Callback = function(v) YH.sprintBoost = v end })
-MS:Space()
-MS:Toggle({ Title = "Noclip", Desc = "Walk through walls", Callback = function(s) YH.noclipOn = s end })
-MS:Space()
-
--- Utilities
-local US = T:Section({ Title = "Utilities" })
-
--- Crosshair
-US:Toggle({ Title = "Custom Crosshair", Callback = function(s) YH.chOn = s end })
-US:Space()
-US:Slider({ Title = "Crosshair Length", Width = 200, Value = { Min=5, Max=30, Default=10 }, Step = 1, Callback = function(v) YH.chLen = v end })
-US:Space()
-US:Slider({ Title = "Crosshair Width", Width = 200, Value = { Min=1, Max=8, Default=2 }, Step = 1, Callback = function(v) YH.chW = v end })
-US:Space()
-
--- Flashlight
-US:Toggle({ Title = "Flashlight", Callback = function(s) YH.flOn = s end })
-US:Space()
-
--- Stretched Res
-US:Toggle({ Title = "Stretched Res", Desc = "Wider field of view", Callback = function(s) YH.stOn = s end })
-US:Space()
-US:Slider({ Title = "Stretch Amount", Width = 200, Value = { Min=50, Max=200, Default=100 }, Step = 5, Callback = function(v) YH.stVal = v end })
-US:Space()
-
--- Actions
-US:Button({ Title = "Reset Character", Callback = function()
-    if YH.LocalPlayer.Character and YH.LocalPlayer.Character:FindFirstChild("Humanoid") then
-        YH.LocalPlayer.Character.Humanoid.Health = 0
-    end
+local utility = T:Section({Title = "Utility"})
+utility:Toggle({Title = "Anti AFK", Callback = function(value) YH.antiAfkOn = value end})
+utility:Space()
+utility:Slider({Title = "FPS Cap", Width = 200, Value = {Min = 30, Max = 240, Default = 60}, Step = 10, Callback = function(value)
+    if type(setfpscap) == "function" then setfpscap(value) end
 end})
-US:Space()
-US:Button({ Title = "Anti AFK", Desc = "Prevent auto-kick", Callback = function()
-    if YH.afkConnected then return end
-    YH.afkConnected = true
-    YH.LocalPlayer.Idled:Connect(function()
-        YH.VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
-        task.wait(0.1)
-        YH.VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
-    end)
+utility:Space()
+utility:Button({Title = "Reset Character", Callback = function()
+    local character = YH.LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if humanoid then humanoid.Health = 0 end
 end})
-US:Space()
-US:Slider({ Title = "FPS Cap", Width = 200, Value = { Min=15, Max=360, Default=60 }, Step = 1, Callback = function(v) setfpscap(v) end})
-US:Space()
-US:Button({ Title = "Infinite Yield", Callback = function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
+utility:Space()
+utility:Button({Title = "Infinite Yield", Desc = "Pinned audited revision", Callback = function()
+    local commit = "f43b55d282a33e5a009b20a2bedb5b527e4c9560"
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/" .. commit .. "/source"))()
 end})
 
--- Crosshair drawing
-local chLines = {}
+local crosshair = T:Section({Title = "Crosshair"})
+crosshair:Toggle({Title = "Enable", Callback = function(value) YH.chOn = value end})
+crosshair:Space()
+crosshair:Slider({Title = "Length", Width = 200, Value = {Min = 5, Max = 30, Default = 10}, Step = 1, Callback = function(value) YH.chLen = value end})
+crosshair:Space()
+crosshair:Slider({Title = "Thickness", Width = 200, Value = {Min = 1, Max = 6, Default = 2}, Step = 1, Callback = function(value) YH.chW = value end})
+
+local skill = T:Section({Title = "Skill Check"})
+YH.skillInput = "Mouse"
+YH.skillTolerance = 18
+skill:Toggle({Title = "Auto Skill Check", Desc = "Clicks once when the needle enters the goal", Callback = function(value) YH.skillOn = value end})
+skill:Space()
+skill:Dropdown({Title = "Input", Values = {"Mouse", "Space"}, Value = 1, Callback = function(value) YH.skillInput = value end})
+skill:Space()
+skill:Slider({Title = "Tolerance", Desc = "Increase if clicks are late", Width = 200, Value = {Min = 8, Max = 30, Default = 18}, Step = 1, Callback = function(value) YH.skillTolerance = value end})
+
+local lines = {}
 for i = 1, 4 do
-    chLines[i] = Drawing.new("Line")
-    chLines[i].Thickness = 2
-    chLines[i].Color = Color3.fromRGB(0, 255, 100)
-    chLines[i].Transparency = 0.8
-    chLines[i].Visible = false
+    local line = YH.TrackDrawing(Drawing.new("Line"))
+    line.Color = Color3.fromRGB(105, 255, 175)
+    line.Transparency = 0.9
+    line.Visible = false
+    lines[i] = line
 end
 
-YH.RunService.RenderStepped:Connect(function()
-    -- Crosshair
-    if YH.chOn then
-        local cx = YH.Camera.ViewportSize.X / 2
-        local cy = YH.Camera.ViewportSize.Y / 2
-        local len = YH.chLen
-        local w = YH.chW
-        for i = 1, 4 do chLines[i].Visible = true; chLines[i].Thickness = w end
-        -- Top
-        chLines[1].From = Vector2.new(cx, cy - len)
-        chLines[1].To = Vector2.new(cx, cy - 2)
-        -- Bottom
-        chLines[2].From = Vector2.new(cx, cy + 2)
-        chLines[2].To = Vector2.new(cx, cy + len)
-        -- Left
-        chLines[3].From = Vector2.new(cx - len, cy)
-        chLines[3].To = Vector2.new(cx - 2, cy)
-        -- Right
-        chLines[4].From = Vector2.new(cx + 2, cy)
-        chLines[4].To = Vector2.new(cx + len, cy)
+local function setCrosshairVisible(visible)
+    for _, line in ipairs(lines) do line.Visible = visible end
+end
+
+YH.Connect(YH.LocalPlayer.Idled, function()
+    if not YH.antiAfkOn then return end
+    pcall(function()
+        YH.VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+        task.wait(0.05)
+        YH.VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    end)
+end)
+
+local skillGui, previousRotation, armed = nil, nil, true
+local function angularDifference(a, b)
+    return (a - b + 180) % 360 - 180
+end
+
+local function findSkillGui()
+    local playerGui = YH.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    return (playerGui and playerGui:FindFirstChild("SkillCheckPromptGui")) or YH.CoreGui:FindFirstChild("SkillCheckPromptGui")
+end
+
+local function sendSkillInput(check)
+    if YH.skillInput == "Space" then
+        YH.VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+        task.delay(0.04, function() pcall(function() YH.VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game) end) end)
+        return
+    end
+    local position, size = check.AbsolutePosition, check.AbsoluteSize
+    local x, y = position.X + size.X / 2, position.Y + size.Y / 2
+    YH.VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+    task.delay(0.04, function() pcall(function() YH.VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0) end) end)
+end
+
+YH.Connect(YH.RunService.RenderStepped, function()
+    local camera = YH.GetCamera()
+    if camera and YH.chOn then
+        local x, y = camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2
+        local length, gap = YH.chLen, 3
+        for _, line in ipairs(lines) do line.Thickness = YH.chW; line.Visible = true end
+        lines[1].From = Vector2.new(x, y - length); lines[1].To = Vector2.new(x, y - gap)
+        lines[2].From = Vector2.new(x, y + gap); lines[2].To = Vector2.new(x, y + length)
+        lines[3].From = Vector2.new(x - length, y); lines[3].To = Vector2.new(x - gap, y)
+        lines[4].From = Vector2.new(x + gap, y); lines[4].To = Vector2.new(x + length, y)
     else
-        for i = 1, 4 do chLines[i].Visible = false end
+        setCrosshairVisible(false)
     end
 
-    -- Stretched Res
-    if YH.stOn then
-        YH.Camera.ViewportSize = Vector2.new(
-            YH.Camera.ViewportSize.X * (YH.stVal / 100),
-            YH.Camera.ViewportSize.Y
-        )
+    if not YH.skillOn then skillGui = nil; previousRotation = nil; armed = true; return end
+    if not skillGui or not skillGui.Parent then skillGui = findSkillGui(); previousRotation = nil; armed = true end
+    if not skillGui or not skillGui.Enabled then previousRotation = nil; armed = true; return end
+    local check = skillGui:FindFirstChild("Check", true)
+    local line = skillGui:FindFirstChild("Line", true)
+    local goal = skillGui:FindFirstChild("Goal", true)
+    if not check or not check:IsA("GuiObject") or not line or not goal then return end
+
+    local rotation = line.Rotation % 360
+    local difference = angularDifference(rotation, goal.Rotation % 360)
+    local crossed = false
+    if previousRotation then
+        local previousDifference = angularDifference(previousRotation, goal.Rotation % 360)
+        local step = math.abs(angularDifference(rotation, previousRotation))
+        crossed = step < 90 and previousDifference * difference <= 0
     end
+    if armed and (math.abs(difference) <= YH.skillTolerance or crossed) then
+        armed = false
+        pcall(sendSkillInput, check)
+    elseif math.abs(difference) > YH.skillTolerance + 12 then
+        armed = true
+    end
+    previousRotation = rotation
 end)
