@@ -691,28 +691,28 @@ YH.Connect(YH.RunService.RenderStepped, function(dt)
                 hl.Parent = YH.CoreGui; genH[obj] = hl
                 local bill = Instance.new("BillboardGui")
                 bill.Name = "YukiGeneratorCard"
-                bill.Size = UDim2.new(0, 190, 0, 64)
-                bill.StudsOffset = Vector3.new(0, 4, 0)
+                bill.Size = UDim2.new(0, 145, 0, 46)
+                bill.StudsOffset = Vector3.new(0, 3.2, 0)
                 bill.AlwaysOnTop = true; bill.Parent = YH.CoreGui
                 local card = Instance.new("Frame")
                 card.Name = "Card"; card.Size = UDim2.fromScale(1, 1)
                 card.BackgroundColor3 = Color3.fromRGB(15, 18, 28); card.BackgroundTransparency = 0.12
                 card.BorderSizePixel = 0; card.Parent = bill
-                Instance.new("UICorner", card).CornerRadius = UDim.new(0, 9)
+                Instance.new("UICorner", card).CornerRadius = UDim.new(0, 7)
                 local stroke = Instance.new("UIStroke", card)
                 stroke.Color = Color3.fromRGB(95, 115, 175); stroke.Transparency = 0.35; stroke.Thickness = 1
                 local title = Instance.new("TextLabel")
-                title.Name = "Title"; title.Position = UDim2.new(0, 10, 0, 6); title.Size = UDim2.new(1, -62, 0, 17)
-                title.BackgroundTransparency = 1; title.Font = Enum.Font.SourceSansSemibold; title.TextSize = 14
+                title.Name = "Title"; title.Position = UDim2.new(0, 8, 0, 4); title.Size = UDim2.new(1, -50, 0, 13)
+                title.BackgroundTransparency = 1; title.Font = Enum.Font.SourceSansSemibold; title.TextSize = 11
                 title.TextColor3 = Color3.fromRGB(235, 240, 255); title.TextXAlignment = Enum.TextXAlignment.Left
                 title.Text = "GENERATOR"; title.Parent = card
                 local percent = Instance.new("TextLabel")
-                percent.Name = "Percent"; percent.Position = UDim2.new(1, -52, 0, 6); percent.Size = UDim2.new(0, 42, 0, 17)
-                percent.BackgroundTransparency = 1; percent.Font = Enum.Font.SourceSansBold; percent.TextSize = 14
+                percent.Name = "Percent"; percent.Position = UDim2.new(1, -42, 0, 4); percent.Size = UDim2.new(0, 34, 0, 13)
+                percent.BackgroundTransparency = 1; percent.Font = Enum.Font.SourceSansBold; percent.TextSize = 11
                 percent.TextColor3 = Color3.fromRGB(125, 220, 255); percent.TextXAlignment = Enum.TextXAlignment.Right
                 percent.Parent = card
                 local track = Instance.new("Frame")
-                track.Name = "Track"; track.Position = UDim2.new(0, 10, 0, 29); track.Size = UDim2.new(1, -20, 0, 9)
+                track.Name = "Track"; track.Position = UDim2.new(0, 8, 0, 20); track.Size = UDim2.new(1, -16, 0, 6)
                 track.BackgroundColor3 = Color3.fromRGB(39, 44, 61); track.BorderSizePixel = 0; track.ClipsDescendants = true; track.Parent = card
                 Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
                 local fill = Instance.new("Frame")
@@ -722,8 +722,8 @@ YH.Connect(YH.RunService.RenderStepped, function(dt)
                 local gradient = Instance.new("UIGradient", fill)
                 gradient.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(205, 225, 255))
                 local status = Instance.new("TextLabel")
-                status.Name = "Status"; status.Position = UDim2.new(0, 10, 0, 42); status.Size = UDim2.new(1, -20, 0, 15)
-                status.BackgroundTransparency = 1; status.Font = Enum.Font.SourceSans; status.TextSize = 12
+                status.Name = "Status"; status.Position = UDim2.new(0, 8, 0, 29); status.Size = UDim2.new(1, -16, 0, 12)
+                status.BackgroundTransparency = 1; status.Font = Enum.Font.SourceSans; status.TextSize = 10
                 status.TextColor3 = Color3.fromRGB(165, 175, 205); status.TextXAlignment = Enum.TextXAlignment.Left
                 status.Parent = card
                 genL[obj] = bill
