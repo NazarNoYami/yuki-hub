@@ -3,8 +3,8 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local CoreGui = game:GetService("CoreGui")
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+local CLICK_INTERVAL = 0.65
 
 if _G.YukiButtonDetectorCleanup then pcall(_G.YukiButtonDetectorCleanup) end
 local old = CoreGui:FindFirstChild("YukiButtonDetector")
@@ -17,8 +17,8 @@ screen.DisplayOrder = 999999
 screen.Parent = CoreGui
 
 local panel = Instance.new("Frame")
-panel.Size = UDim2.new(0, 252, 0, 188)
-panel.Position = UDim2.new(0, 14, 0.5, -94)
+panel.Size = UDim2.new(0, 252, 0, 260)
+panel.Position = UDim2.new(0, 14, 0.5, -130)
 panel.BackgroundColor3 = Color3.fromRGB(15, 18, 27)
 panel.BackgroundTransparency = 0.06
 panel.BorderSizePixel = 0
@@ -38,7 +38,7 @@ title.Font = Enum.Font.SourceSansBold
 title.TextSize = 16
 title.TextColor3 = Color3.fromRGB(235, 240, 255)
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "GUI Button Detector"
+title.Text = "Multi Button Detector"
 title.Parent = panel
 
 local close = Instance.new("TextButton")
@@ -54,7 +54,7 @@ close.Parent = panel
 Instance.new("UICorner", close).CornerRadius = UDim.new(0, 6)
 
 local status = Instance.new("TextLabel")
-status.Size = UDim2.new(1, -20, 0, 34)
+status.Size = UDim2.new(1, -20, 0, 42)
 status.Position = UDim2.new(0, 10, 0, 36)
 status.BackgroundColor3 = Color3.fromRGB(24, 28, 41)
 status.BorderSizePixel = 0
@@ -62,7 +62,7 @@ status.Font = Enum.Font.SourceSans
 status.TextSize = 13
 status.TextWrapped = true
 status.TextColor3 = Color3.fromRGB(170, 182, 215)
-status.Text = "No button recorded"
+status.Text = "0 targets recorded"
 status.Parent = panel
 Instance.new("UICorner", status).CornerRadius = UDim.new(0, 7)
 
@@ -81,19 +81,17 @@ local function makeButton(text, y, color)
     return button
 end
 
-local record = makeButton("Record Next Game Click", 76, Color3.fromRGB(70, 105, 205))
-local notify = makeButton("Notify: ON", 112, Color3.fromRGB(45, 135, 105))
-local auto = makeButton("Auto Click: OFF", 148, Color3.fromRGB(64, 69, 89))
+local record = makeButton("Add Target: Record Next Click", 84, Color3.fromRGB(70, 105, 205))
+local clear = makeButton("Clear All Targets", 118, Color3.fromRGB(115, 65, 80))
+local notify = makeButton("Notify On Appear: ON", 152, Color3.fromRGB(45, 135, 105))
+local clickAppear = makeButton("Click On Appear: OFF", 186, Color3.fromRGB(64, 69, 89))
+local clickVisible = makeButton("Click While Visible: OFF", 220, Color3.fromRGB(64, 69, 89))
 
 local recording = false
 local notifyOn = true
-local autoOn = false
-local target
-local targetRoot
-local targetPath
-local relativeX, relativeY = 0.5, 0.5
-local wasVisible = false
-local hasDisappeared = false
+local clickAppearOn = false
+local clickVisibleOn = false
+local targets = {}
 local connections = {}
 
 local function cleanup()
@@ -109,23 +107,23 @@ local function connect(signal, callback)
 end
 
 local function toast(text)
-    local toastGui = Instance.new("TextLabel")
-    toastGui.AnchorPoint = Vector2.new(0.5, 0)
-    toastGui.Position = UDim2.new(0.5, 0, 0, 16)
-    toastGui.Size = UDim2.new(0, 270, 0, 38)
-    toastGui.BackgroundColor3 = Color3.fromRGB(18, 22, 33)
-    toastGui.BackgroundTransparency = 0.08
-    toastGui.BorderSizePixel = 0
-    toastGui.Font = Enum.Font.SourceSansSemibold
-    toastGui.TextSize = 14
-    toastGui.TextColor3 = Color3.fromRGB(220, 230, 255)
-    toastGui.Text = text
-    toastGui.Parent = screen
-    Instance.new("UICorner", toastGui).CornerRadius = UDim.new(0, 8)
-    task.delay(2.5, function() if toastGui.Parent then toastGui:Destroy() end end)
+    local label = Instance.new("TextLabel")
+    label.AnchorPoint = Vector2.new(0.5, 0)
+    label.Position = UDim2.new(0.5, 0, 0, 16)
+    label.Size = UDim2.new(0, 280, 0, 38)
+    label.BackgroundColor3 = Color3.fromRGB(18, 22, 33)
+    label.BackgroundTransparency = 0.08
+    label.BorderSizePixel = 0
+    label.Font = Enum.Font.SourceSansSemibold
+    label.TextSize = 14
+    label.TextColor3 = Color3.fromRGB(220, 230, 255)
+    label.Text = text
+    label.Parent = screen
+    Instance.new("UICorner", label).CornerRadius = UDim.new(0, 8)
+    task.delay(2.5, function() if label.Parent then label:Destroy() end end)
 end
 
-local function visible(gui)
+local function isVisible(gui)
     if not gui or not gui.Parent or not gui:IsA("GuiObject") or not gui.Visible then return false end
     local current = gui.Parent
     while current do
@@ -148,10 +146,12 @@ end
 
 local function resolve(root, path)
     local current = root
-    for _, name in ipairs(path or {}) do
-        current = current and current:FindFirstChild(name)
-    end
+    for _, name in ipairs(path) do current = current and current:FindFirstChild(name) end
     return current
+end
+
+local function pathKey(root, path)
+    return (root == CoreGui and "CoreGui/" or "PlayerGui/") .. table.concat(path, "/")
 end
 
 local function objectsAt(x, y)
@@ -165,78 +165,111 @@ local function objectsAt(x, y)
         end
     end
     table.sort(objects, function(a, b)
-        local aa = a.object.AbsoluteSize.X * a.object.AbsoluteSize.Y
-        local ba = b.object.AbsoluteSize.X * b.object.AbsoluteSize.Y
-        return aa < ba
+        return a.object.AbsoluteSize.X * a.object.AbsoluteSize.Y < b.object.AbsoluteSize.X * b.object.AbsoluteSize.Y
     end)
     return objects
 end
 
+local function updateStatus(message)
+    status.Text = tostring(#targets) .. " targets recorded" .. (message and ("\n" .. message) or "")
+end
+
+local function clickTarget(target)
+    local object = target.object
+    if not isVisible(object) then return end
+    target.lastClick = os.clock()
+    local position, size = object.AbsolutePosition, object.AbsoluteSize
+    local x = position.X + size.X * target.x
+    local y = position.Y + size.Y * target.y
+    task.spawn(function()
+        pcall(function()
+            VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+            task.wait(0.04)
+            VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+        end)
+    end)
+end
+
 record.MouseButton1Click:Connect(function()
     recording = true
-    record.Text = "Click the game button now..."
-    status.Text = "Waiting for one click outside this detector"
+    record.Text = "Click a game button now..."
+    updateStatus("Waiting for a click outside this panel")
+end)
+
+clear.MouseButton1Click:Connect(function()
+    targets = {}
+    recording = false
+    record.Text = "Add Target: Record Next Click"
+    updateStatus()
 end)
 
 notify.MouseButton1Click:Connect(function()
     notifyOn = not notifyOn
-    notify.Text = "Notify: " .. (notifyOn and "ON" or "OFF")
+    notify.Text = "Notify On Appear: " .. (notifyOn and "ON" or "OFF")
     notify.BackgroundColor3 = notifyOn and Color3.fromRGB(45, 135, 105) or Color3.fromRGB(64, 69, 89)
 end)
 
-auto.MouseButton1Click:Connect(function()
-    autoOn = not autoOn
-    auto.Text = "Auto Click: " .. (autoOn and "ON" or "OFF")
-    auto.BackgroundColor3 = autoOn and Color3.fromRGB(185, 105, 65) or Color3.fromRGB(64, 69, 89)
+clickAppear.MouseButton1Click:Connect(function()
+    clickAppearOn = not clickAppearOn
+    clickAppear.Text = "Click On Appear: " .. (clickAppearOn and "ON" or "OFF")
+    clickAppear.BackgroundColor3 = clickAppearOn and Color3.fromRGB(185, 105, 65) or Color3.fromRGB(64, 69, 89)
+end)
+
+clickVisible.MouseButton1Click:Connect(function()
+    clickVisibleOn = not clickVisibleOn
+    clickVisible.Text = "Click While Visible: " .. (clickVisibleOn and "ON" or "OFF")
+    clickVisible.BackgroundColor3 = clickVisibleOn and Color3.fromRGB(185, 105, 65) or Color3.fromRGB(64, 69, 89)
 end)
 
 connect(UserInputService.InputBegan, function(input)
     if not recording then return end
-    local isPointer = input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch
-    if not isPointer then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
     local point = input.UserInputType == Enum.UserInputType.Touch and input.Position or UserInputService:GetMouseLocation()
-    local candidates = objectsAt(point.X, point.Y)
-    local picked = candidates[1]
-    if not picked then status.Text = "No game GUI found there"; return end
+    local picked = objectsAt(point.X, point.Y)[1]
+    if not picked then updateStatus("No game GUI found there"); return end
 
-    target = picked.object
-    targetRoot = picked.root
-    targetPath = pathFrom(targetRoot, target)
-    local position, size = target.AbsolutePosition, target.AbsoluteSize
-    relativeX = math.clamp((point.X - position.X) / math.max(size.X, 1), 0, 1)
-    relativeY = math.clamp((point.Y - position.Y) / math.max(size.Y, 1), 0, 1)
+    local path = pathFrom(picked.root, picked.object)
+    if not path then return end
+    local key = pathKey(picked.root, path)
+    local position, size = picked.object.AbsolutePosition, picked.object.AbsoluteSize
+    local newTarget = {
+        key = key,
+        name = picked.object.Name,
+        root = picked.root,
+        path = path,
+        object = picked.object,
+        x = math.clamp((point.X - position.X) / math.max(size.X, 1), 0, 1),
+        y = math.clamp((point.Y - position.Y) / math.max(size.Y, 1), 0, 1),
+        wasVisible = isVisible(picked.object),
+        hasDisappeared = false,
+        lastClick = 0,
+    }
+    local replaced = false
+    for index, target in ipairs(targets) do
+        if target.key == key then targets[index] = newTarget; replaced = true; break end
+    end
+    if not replaced then table.insert(targets, newTarget) end
     recording = false
-    wasVisible = visible(target)
-    hasDisappeared = not wasVisible
-    record.Text = "Record Next Game Click"
-    status.Text = "Recorded: " .. target.Name .. "\nWaiting for it to disappear"
-    toast("Recorded button: " .. target.Name)
+    record.Text = "Add Target: Record Next Click"
+    updateStatus((replaced and "Updated: " or "Added: ") .. newTarget.name)
+    toast((replaced and "Updated " or "Added ") .. newTarget.name)
 end)
 
 connect(RunService.Heartbeat, function()
-    if not targetPath then return end
-    if not target or not target.Parent then target = resolve(targetRoot, targetPath) end
-    local isVisible = visible(target)
-    if not isVisible then
-        hasDisappeared = true
-        if wasVisible then status.Text = "Recorded: " .. targetPath[#targetPath] .. "\nWaiting for it to appear" end
-    elseif not wasVisible and hasDisappeared then
-        local name = targetPath[#targetPath]
-        status.Text = "Detected: " .. name .. " appeared"
-        if notifyOn then toast(name .. " appeared") end
-        if autoOn then
-            local position, size = target.AbsolutePosition, target.AbsoluteSize
-            local x, y = position.X + size.X * relativeX, position.Y + size.Y * relativeY
-            pcall(function()
-                VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-                task.wait(0.04)
-                VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
-            end)
+    local now = os.clock()
+    for _, target in ipairs(targets) do
+        if not target.object or not target.object.Parent then target.object = resolve(target.root, target.path) end
+        local visible = isVisible(target.object)
+        if not visible then
+            target.hasDisappeared = true
+        elseif not target.wasVisible and target.hasDisappeared then
+            updateStatus(target.name .. " appeared")
+            if notifyOn then toast(target.name .. " appeared") end
+            if clickAppearOn then clickTarget(target) end
         end
+        if visible and clickVisibleOn and now - target.lastClick >= CLICK_INTERVAL then clickTarget(target) end
+        target.wasVisible = visible
     end
-    wasVisible = isVisible
 end)
 
-close.MouseButton1Click:Connect(function()
-    cleanup()
-end)
+close.MouseButton1Click:Connect(cleanup)
