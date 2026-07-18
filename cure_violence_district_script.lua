@@ -20,9 +20,10 @@ end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 
@@ -31,19 +32,12 @@ local function waitRemote(parent, name)
     return parent and parent:WaitForChild(name, 5)
 end
 
-local GenRemotes = waitRemote(Remotes, "Generator")
-local SkillCheckEvent = waitRemote(GenRemotes, "SkillCheckEvent")
-local SkillCheckResult = waitRemote(GenRemotes, "SkillCheckResultEvent")
-local KPRemotes = Remotes and Remotes:FindFirstChild("KillerPerks")
-local KSRemotes = KPRemotes and KPRemotes:FindFirstChild("kingscourge")
-local KingScourgeStart = KSRemotes and KSRemotes:FindFirstChild("KingScourgeStart")
-local KingScourgeHit = KSRemotes and KSRemotes:FindFirstChild("KingScourgeHit")
 local ItemRemotes = waitRemote(Remotes, "Items")
 local DaggerFolder = ItemRemotes and ItemRemotes:FindFirstChild("Parrying Dagger")
 local ParryEvent = DaggerFolder and DaggerFolder:FindFirstChild("parry")
 
 local Cfg = {
-    ESP_Enabled = true,
+    ESP_Enabled = false,
     ESP_Killer = true,
     ESP_Survivor = true,
     ESP_Spectator = false,
@@ -55,10 +49,10 @@ local Cfg = {
     ParryRange = 18,
     AutoEquip = true,
     ParryCooldown = 1,
-    AutoPerfectGen = true,
-    GenDelayMin = 0.15,
-    GenDelayMax = 0.35,
-    Crosshair = true,
+    AutoSkillCheck = false,
+    SkillTolerance = 4,
+    SkillLead = 0.04,
+    Crosshair = false,
     CHColor = Color3.fromRGB(0, 220, 255),
     CHSize = 10,
     CHGap = 5,
@@ -324,60 +318,117 @@ end
 for _, player in ipairs(Players:GetPlayers()) do SetupAutoParryPlayer(player) end
 regConn(Players.PlayerAdded:Connect(SetupAutoParryPlayer))
 
-local genWaiting, ksWaiting = false, false
-if SkillCheckEvent then regConn(SkillCheckEvent.OnClientEvent:Connect(function() genWaiting = true end)) end
-if KingScourgeStart then regConn(KingScourgeStart.OnClientEvent:Connect(function() ksWaiting = true end)) end
+local TARGETS_FILE = "yuki_button_targets.json"
+local CALIBRATION_FILE = "yuki_skill_calibration.json"
+local savedTargets, targetLabels, selectedTarget = {}, {}, nil
+local calibrationOffset, calibrating
 
-local function setupSkillCheck(source)
-    local skillGui = PG:WaitForChild("SkillCheckPromptGui", 5)
-    local check = skillGui and skillGui:WaitForChild("Check", 5)
-    local line = check and check:WaitForChild("Line", 5)
-    local goal = check and check:WaitForChild("Goal", 5)
-    if not check or not line or not goal then return end
-    local lastVisible = false
-    regConn(RunService.Heartbeat:Connect(function()
-        local visible = check.Visible
-        local waiting = source == "generator" and genWaiting or ksWaiting
-        if Cfg.AutoPerfectGen and visible and not lastVisible and waiting then
-            if source == "generator" then genWaiting = false else ksWaiting = false end
-            local minimum, maximum = Cfg.GenDelayMin, Cfg.GenDelayMax
-            local delayTime = minimum + math.random() * (math.max(minimum, maximum) - minimum)
-            task.delay(delayTime, function()
-                if not Running or not Cfg.AutoPerfectGen or not LP.Character or not check.Visible then return end
-                local interactable = LP.Character:FindFirstChild("CheckInterractable")
-                if not interactable or not interactable:GetAttribute("isRepairing") then return end
-                line.Rotation = 109 + goal.Rotation
-                pcall(function()
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-                    task.wait(0.05)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-                end)
-            end)
+local function angularDifference(a, b)
+    return (a - b + 180) % 360 - 180
+end
+
+local function loadCalibration()
+    if type(readfile) ~= "function" then return end
+    local ok, data = pcall(function() return HttpService:JSONDecode(readfile(CALIBRATION_FILE)) end)
+    if ok and type(data) == "table" then calibrationOffset = tonumber(data.offset) end
+end
+
+local function saveCalibration(offset)
+    calibrationOffset = offset
+    if type(writefile) == "function" then
+        pcall(writefile, CALIBRATION_FILE, HttpService:JSONEncode({offset = offset}))
+    end
+end
+
+local function loadSavedTargets()
+    savedTargets, targetLabels, selectedTarget = {}, {}, nil
+    if type(readfile) ~= "function" then targetLabels = {"File API unavailable"}; return end
+    local ok, data = pcall(function() return HttpService:JSONDecode(readfile(TARGETS_FILE)) end)
+    if not ok or type(data) ~= "table" or #data == 0 then targetLabels = {"No saved buttons"}; return end
+    for index, target in ipairs(data) do
+        if type(target.path) == "table" and type(target.fingerprint) == "string" then
+            target.label = (target.name or target.path[#target.path] or "Button") .. " #" .. index
+            table.insert(savedTargets, target)
+            table.insert(targetLabels, target.label)
         end
-        lastVisible = visible
-    end))
+    end
+    selectedTarget = savedTargets[1]
 end
-setupSkillCheck("generator")
-setupSkillCheck("kingscourge")
 
-if type(hookmetamethod) == "function" and type(newcclosure) == "function" and type(getnamecallmethod) == "function" then
-    pcall(function()
-        local oldNamecall
-        oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-            local args = {...}
-            if getnamecallmethod() == "FireServer" and not checkcaller() and Running and Cfg.AutoPerfectGen then
-                if self == SkillCheckResult then
-                    args[1], args[2] = "success", 1
-                    return oldNamecall(self, table.unpack(args))
-                elseif self == KingScourgeHit then
-                    args[2] = "success"
-                    return oldNamecall(self, table.unpack(args))
-                end
-            end
-            return oldNamecall(self, ...)
-        end))
-    end)
+local function selectedRuntimeTarget()
+    if not selectedTarget or type(_G.YukiButtonDetectorGetTargets) ~= "function" then return nil end
+    for _, target in ipairs(_G.YukiButtonDetectorGetTargets()) do
+        if target.key == selectedTarget.key then return target end
+    end
 end
+
+local function findSkillGui()
+    return PG:FindFirstChild("SkillCheckPromptGui") or CoreGui:FindFirstChild("SkillCheckPromptGui")
+end
+
+loadCalibration()
+loadSavedTargets()
+
+regConn(UserInputService.InputBegan:Connect(function(input, processed)
+    if not calibrating or processed and input.UserInputType == Enum.UserInputType.Keyboard then return end
+    local gui = findSkillGui()
+    if not gui or not gui.Enabled then return end
+    local line = gui:FindFirstChild("Line", true)
+    local goal = gui:FindFirstChild("Goal", true)
+    if not line or not goal then return end
+    local isAction = input.UserInputType == Enum.UserInputType.Touch
+        or input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Keyboard
+    if not isAction then return end
+    saveCalibration(angularDifference(line.AbsoluteRotation % 360, goal.AbsoluteRotation % 360))
+    calibrating = false
+    warn(string.format("[CURE] Skill timing saved: %.2f degrees", calibrationOffset))
+end))
+
+local skillGui, previousRotation, previousError
+local angularVelocity = 0
+local clickedPrompt = false
+regConn(RunService.RenderStepped:Connect(function(dt)
+    local target = selectedRuntimeTarget()
+    if not Cfg.AutoSkillCheck or not target or not calibrationOffset then
+        skillGui, previousRotation, previousError = nil, nil, nil
+        angularVelocity, clickedPrompt = 0, false
+        return
+    end
+    if not skillGui or not skillGui.Parent then
+        skillGui = findSkillGui()
+        previousRotation, previousError, angularVelocity, clickedPrompt = nil, nil, 0, false
+    end
+    if not skillGui or not skillGui.Enabled then
+        previousRotation, previousError, angularVelocity, clickedPrompt = nil, nil, 0, false
+        return
+    end
+    local check = skillGui:FindFirstChild("Check", true)
+    local line = skillGui:FindFirstChild("Line", true)
+    local goal = skillGui:FindFirstChild("Goal", true)
+    if not check or not check:IsA("GuiObject") or not check.Visible or not line or not goal then return end
+    if goal.Rotation == 0 then
+        previousRotation, previousError, angularVelocity, clickedPrompt = nil, nil, 0, false
+        return
+    end
+
+    local rotation = line.AbsoluteRotation % 360
+    if previousRotation and dt > 0 then
+        local measured = angularDifference(rotation, previousRotation) / dt
+        angularVelocity = angularVelocity == 0 and measured or angularVelocity * 0.65 + measured * 0.35
+    end
+    local predicted = rotation + angularVelocity * Cfg.SkillLead
+    local difference = angularDifference(predicted, goal.AbsoluteRotation % 360)
+    local skillError = angularDifference(difference, calibrationOffset)
+    local crossed = previousError
+        and math.abs(angularDifference(skillError, previousError)) < 45
+        and previousError * skillError <= 0
+    if not clickedPrompt and (math.abs(skillError) <= Cfg.SkillTolerance or crossed) then
+        clickedPrompt = true
+        pcall(_G.YukiButtonDetectorClick, target)
+    end
+    previousRotation, previousError = rotation, skillError
+end))
 
 local WINDUI_COMMIT = "7b1d561cf658da1f2f49e700cf52963e7bdcb23a"
 local WindUIURL = "https://raw.githubusercontent.com/Footagesus/WindUI/" .. WINDUI_COMMIT .. "/dist/main.lua"
@@ -456,20 +507,57 @@ esp:Toggle({Title = "Highlight", Desc = "Always-on-top chams", Default = Cfg.ESP
     end,
 })
 
-local generator = Tabs.Generator:Section({Title = "Auto Perfect Generator"})
-generator:Toggle({Title = "Enable", Desc = "Rotation snap, Space input, and remote failsafe",
-    Default = Cfg.AutoPerfectGen,
-    Callback = function(value) Cfg.AutoPerfectGen = value end,
+local generator = Tabs.Generator:Section({Title = "Recorded Skill Check"})
+local targetDropdown = generator:Dropdown({Title = "Recorded Button", Values = targetLabels, Value = 1,
+    Callback = function(value)
+        for _, target in ipairs(savedTargets) do
+            if target.label == value then selectedTarget = target; break end
+        end
+    end,
 })
 generator:Space()
-generator:Slider({Title = "Minimum Delay", Desc = "Humanized delay in seconds", Width = 200,
-    Value = {Min = 0.05, Max = 1, Default = Cfg.GenDelayMin}, Step = 0.01,
-    Callback = function(value) Cfg.GenDelayMin = value end,
+generator:Button({Title = "Open Button Recorder", Desc = "Record the skill-check button you press",
+    Callback = function()
+        local commit = "535ffdb8fcfef4eb272e4ee41fac2d1fa23c0343"
+        local url = "https://raw.githubusercontent.com/NazarNoYami/yuki-hub/" .. commit .. "/button_detector.lua"
+        loadstring(game:HttpGet(url))()
+    end,
 })
 generator:Space()
-generator:Slider({Title = "Maximum Delay", Desc = "Humanized delay in seconds", Width = 200,
-    Value = {Min = 0.1, Max = 1.5, Default = Cfg.GenDelayMax}, Step = 0.01,
-    Callback = function(value) Cfg.GenDelayMax = value end,
+generator:Button({Title = "Reload Recorded Buttons", Desc = "Reload yuki_button_targets.json", Callback = function()
+    loadSavedTargets()
+    pcall(function() targetDropdown:Refresh(targetLabels) end)
+end})
+generator:Space()
+generator:Button({Title = "Calibrate Next Manual Hit", Desc = "Arm once, then hit one skill check normally",
+    Callback = function()
+        calibrating = true
+        warn("[CURE] Calibration armed; complete one skill check manually")
+    end,
+})
+generator:Space()
+generator:Button({Title = "Clear Calibration", Callback = function()
+    calibrationOffset, calibrating = nil, false
+    if type(writefile) == "function" then pcall(writefile, CALIBRATION_FILE, "{}") end
+end})
+generator:Space()
+generator:Toggle({Title = "Auto Skill Check", Desc = "Replays your recorded click at your calibrated timing",
+    Default = Cfg.AutoSkillCheck,
+    Callback = function(value)
+        if value and not selectedRuntimeTarget() then warn("[CURE] Open recorder and record a button first") end
+        if value and not calibrationOffset then warn("[CURE] Calibrate one manual hit first") end
+        Cfg.AutoSkillCheck = value
+    end,
+})
+generator:Space()
+generator:Slider({Title = "Accuracy Window", Desc = "Lower is more precise", Width = 200,
+    Value = {Min = 1, Max = 15, Default = Cfg.SkillTolerance}, Step = 1,
+    Callback = function(value) Cfg.SkillTolerance = value end,
+})
+generator:Space()
+generator:Slider({Title = "Input Lead", Desc = "Click latency compensation in milliseconds", Width = 200,
+    Value = {Min = 0, Max = 120, Default = Cfg.SkillLead * 1000}, Step = 5,
+    Callback = function(value) Cfg.SkillLead = value / 1000 end,
 })
 
 local combat = Tabs.Combat:Section({Title = "Auto Parry"})
