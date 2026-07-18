@@ -9,10 +9,41 @@
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 
 -- ─────────────────────────────────────────────────────
--- GLOBAL CLEANUP SYSTEM (Prevents duplicate runs & lag)
+-- STARTUP NOTIFICATION
 -- ─────────────────────────────────────────────────────
-if _G.VD_Cleanup then
-    pcall(_G.VD_Cleanup)
+local startupScreen = Instance.new("ScreenGui")
+startupScreen.Name = "VD_Startup"
+startupScreen.ResetOnSpawn = false
+startupScreen.DisplayOrder = 999999
+startupScreen.Parent = CoreGui
+
+local startupLabel = Instance.new("TextLabel")
+startupLabel.Size = UDim2.new(0, 300, 0, 50)
+startupLabel.Position = UDim2.new(0.5, -150, 0.5, -25)
+startupLabel.BackgroundColor3 = Color3.fromRGB(15, 18, 28)
+startupLabel.BackgroundTransparency = 0.1
+startupLabel.BorderSizePixel = 0
+startupLabel.Font = Enum.Font.SourceSansSemibold
+startupLabel.TextSize = 16
+startupLabel.TextColor3 = Color3.fromRGB(220, 230, 255)
+startupLabel.Text = "[CURE] Loading..."
+startupLabel.Parent = startupScreen
+Instance.new("UICorner", startupLabel).CornerRadius = UDim.new(0, 8)
+
+-- ─────────────────────────────────────────────────────
+-- FLUENT UI LOADER (with fallback)
+-- ─────────────────────────────────────────────────────
+local Fluent = nil
+local FluentLoaded = false
+pcall(function()
+    Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua", true))()
+    if Fluent and type(Fluent) == "table" and Fluent.CreateWindow then
+        FluentLoaded = true
+    end
+end)
+if not FluentLoaded then
+    warn("[CURE] Fluent UI failed to load. Auto Parry & Generator will still work.")
+    startupLabel.Text = "[CURE] Fluent UI unavailable\nAuto features will still run"
 end
 
 local Connections = {}
@@ -53,31 +84,30 @@ local LP  = Players.LocalPlayer
 local PG  = LP:WaitForChild("PlayerGui")
 
 -- ─────────────────────────────────────────────────────
--- REMOTES
+-- REMOTES (non-blocking)
 -- ─────────────────────────────────────────────────────
-local Remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
+local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
 
-local function waitRemote(parent, name)
-    if not parent then return nil end
-    return parent:WaitForChild(name, 5)
-end
+local GenRemotes, SkillCheckEvent, SkillCheckResult, KPRemotes, KSRemotes
+local KingScourgeStart, KingScourgeHit, ItemRemotes, DaggerFolder, ParryEvent, ParryResultEvent
+local AttacksFolder, BasicAttack
 
-local GenRemotes         = waitRemote(Remotes, "Generator")
-local SkillCheckEvent    = waitRemote(GenRemotes, "SkillCheckEvent")
-local SkillCheckResult   = waitRemote(GenRemotes, "SkillCheckResultEvent")
-
-local KPRemotes          = Remotes:FindFirstChild("KillerPerks")
-local KSRemotes          = KPRemotes and KPRemotes:FindFirstChild("kingscourge")
-local KingScourgeStart   = KSRemotes and KSRemotes:FindFirstChild("KingScourgeStart")
-local KingScourgeHit     = KSRemotes and KSRemotes:FindFirstChild("KingScourgeHit")
-
-local ItemRemotes        = waitRemote(Remotes, "Items")
-local DaggerFolder       = ItemRemotes and ItemRemotes:FindFirstChild("Parrying Dagger")
-local ParryEvent         = DaggerFolder and DaggerFolder:FindFirstChild("parry")
-local ParryResultEvent   = DaggerFolder and DaggerFolder:FindFirstChild("parryResult")
-
-local AttacksFolder      = waitRemote(Remotes, "Attacks")
-local BasicAttack        = AttacksFolder and AttacksFolder:FindFirstChild("BasicAttack")
+pcall(function()
+    if not Remotes then return end
+    GenRemotes = Remotes:FindFirstChild("Generator")
+    SkillCheckEvent = GenRemotes and GenRemotes:FindFirstChild("SkillCheckEvent")
+    SkillCheckResult = GenRemotes and GenRemotes:FindFirstChild("SkillCheckResultEvent")
+    KPRemotes = Remotes:FindFirstChild("KillerPerks")
+    KSRemotes = KPRemotes and KPRemotes:FindFirstChild("kingscourge")
+    KingScourgeStart = KSRemotes and KSRemotes:FindFirstChild("KingScourgeStart")
+    KingScourgeHit = KSRemotes and KSRemotes:FindFirstChild("KingScourgeHit")
+    ItemRemotes = Remotes:FindFirstChild("Items")
+    DaggerFolder = ItemRemotes and ItemRemotes:FindFirstChild("Parrying Dagger")
+    ParryEvent = DaggerFolder and DaggerFolder:FindFirstChild("parry")
+    ParryResultEvent = DaggerFolder and DaggerFolder:FindFirstChild("parryResult")
+    AttacksFolder = Remotes:FindFirstChild("Attacks")
+    BasicAttack = AttacksFolder and AttacksFolder:FindFirstChild("BasicAttack")
+end)
 
 -- ─────────────────────────────────────────────────────
 -- CONFIG (live-edited by toggles/sliders)
@@ -411,8 +441,8 @@ local function TryParry()
 end
 
 local function WatchKillerAnimations(killerChar)
-    local hum = killerChar:WaitForChild("Humanoid", 5)
-    local anim = hum and hum:WaitForChild("Animator", 5)
+    local hum = killerChar:FindFirstChild("Humanoid")
+    local anim = hum and hum:FindFirstChild("Animator")
     if not anim then return end
 
     regConn(anim.AnimationPlayed:Connect(function(track)
@@ -472,10 +502,10 @@ do
         end))
     end
 
-    local skillGui = PG:WaitForChild("SkillCheckPromptGui", 5)
-    local Check    = skillGui and skillGui:WaitForChild("Check", 5)
-    local Line     = Check and Check:WaitForChild("Line", 5)
-    local Goal     = Check and Check:WaitForChild("Goal", 5)
+    local skillGui = PG:FindFirstChild("SkillCheckPromptGui")
+    local Check    = skillGui and skillGui:FindFirstChild("Check")
+    local Line     = Check and Check:FindFirstChild("Line")
+    local Goal     = Check and Check:FindFirstChild("Goal")
     local lastVis  = false
 
     if Check and Line and Goal then
@@ -530,10 +560,10 @@ do
         end))
     end
 
-    local skillGui = PG:WaitForChild("SkillCheckPromptGui", 5)
-    local Check    = skillGui and skillGui:WaitForChild("Check", 5)
-    local Line     = Check and Check:WaitForChild("Line", 5)
-    local Goal     = Check and Check:WaitForChild("Goal", 5)
+    local skillGui = PG:FindFirstChild("SkillCheckPromptGui")
+    local Check    = skillGui and skillGui:FindFirstChild("Check")
+    local Line     = Check and Check:FindFirstChild("Line")
+    local Goal     = Check and Check:FindFirstChild("Goal")
     local ksLastVis = false
 
     if Check and Line and Goal then
@@ -606,8 +636,9 @@ if type(hookmetamethod) == "function" and type(newcclosure) == "function" and ty
 end
 
 -- ─────────────────────────────────────────────────────
--- FLUENT UI WINDOW
+-- FLUENT UI WINDOW (only if Fluent loaded)
 -- ─────────────────────────────────────────────────────
+if FluentLoaded then
 local FluentUI_Instance = nil
 local Window = Fluent:CreateWindow({
     Title       = "[CURE] Violence District",
@@ -877,8 +908,17 @@ regConn(LP.CharacterAdded:Connect(function()
     RefreshESP()
 end))
 
-Fluent:Notify({
-    Title    = "[CURE] Violence District",
-    Content  = "Script loaded! Press RightShift to toggle menu.",
-    Duration = 6,
-})
+if FluentLoaded then
+    Fluent:Notify({
+        Title    = "[CURE] Violence District",
+        Content  = "Script loaded! Press RightShift to toggle menu.",
+        Duration = 6,
+    })
+end
+
+end -- end if FluentLoaded
+
+-- Startup notification cleanup
+task.delay(3, function()
+    if startupScreen and startupScreen.Parent then startupScreen:Destroy() end
+end)
