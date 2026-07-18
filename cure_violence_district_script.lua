@@ -47,6 +47,7 @@ local Cfg = {
     ESP_Highlight = true,
     AutoParry = false,
     ParryRange = 18,
+    ShowParryRadius = true,
     AutoEquip = true,
     ParryCooldown = 1,
     AutoSkillCheck = false,
@@ -64,6 +65,77 @@ local function DestroyCrosshair()
     if CrosshairGui then pcall(function() CrosshairGui:Destroy() end); CrosshairGui = nil end
 end
 table.insert(Cleanups, DestroyCrosshair)
+
+local StatusGui = Instance.new("ScreenGui")
+StatusGui.Name = "VD_Status"
+StatusGui.ResetOnSpawn = false
+StatusGui.DisplayOrder = 998
+pcall(function() StatusGui.Parent = CoreGui end)
+if not StatusGui.Parent then StatusGui.Parent = PG end
+table.insert(Cleanups, function() pcall(function() StatusGui:Destroy() end) end)
+
+local StatusPanel = Instance.new("Frame")
+StatusPanel.AnchorPoint = Vector2.new(1, 0)
+StatusPanel.Position = UDim2.new(1, -12, 0, 54)
+StatusPanel.Size = UDim2.new(0, 270, 0, 62)
+StatusPanel.BackgroundColor3 = Color3.fromRGB(12, 16, 25)
+StatusPanel.BackgroundTransparency = 0.12
+StatusPanel.BorderSizePixel = 0
+StatusPanel.Parent = StatusGui
+local StatusCorner = Instance.new("UICorner")
+StatusCorner.CornerRadius = UDim.new(0, 8)
+StatusCorner.Parent = StatusPanel
+local StatusStroke = Instance.new("UIStroke")
+StatusStroke.Color = Color3.fromRGB(90, 140, 255)
+StatusStroke.Transparency = 0.45
+StatusStroke.Parent = StatusPanel
+
+local function statusLabel(y)
+    local label = Instance.new("TextLabel")
+    label.Position = UDim2.new(0, 10, 0, y)
+    label.Size = UDim2.new(1, -20, 0, 22)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextColor3 = Color3.fromRGB(255, 95, 105)
+    label.Parent = StatusPanel
+    return label
+end
+
+local ParryStatus = statusLabel(7)
+local SkillStatus = statusLabel(33)
+ParryStatus.Text = "AUTO PARRY: OFF"
+SkillStatus.Text = "SKILL REPLAY: OFF"
+
+local ParryRadius
+local function DestroyParryRadius()
+    if ParryRadius then pcall(function() ParryRadius:Destroy() end); ParryRadius = nil end
+end
+table.insert(Cleanups, DestroyParryRadius)
+
+local function UpdateParryRadius()
+    if not Cfg.AutoParry or not Cfg.ShowParryRadius then DestroyParryRadius(); return end
+    local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if not root then DestroyParryRadius(); return end
+    if not ParryRadius then
+        ParryRadius = Instance.new("Part")
+        ParryRadius.Name = "VD_ParryRadius"
+        ParryRadius.Shape = Enum.PartType.Cylinder
+        ParryRadius.Anchored = true
+        ParryRadius.CanCollide = false
+        ParryRadius.CanQuery = false
+        ParryRadius.CanTouch = false
+        ParryRadius.CastShadow = false
+        ParryRadius.Material = Enum.Material.Neon
+        ParryRadius.Color = Color3.fromRGB(80, 165, 255)
+        ParryRadius.Transparency = 0.78
+        ParryRadius.Parent = workspace
+    end
+    local diameter = Cfg.ParryRange * 2
+    ParryRadius.Size = Vector3.new(0.08, diameter, diameter)
+    ParryRadius.CFrame = CFrame.new(root.Position - Vector3.new(0, 3, 0)) * CFrame.Angles(0, 0, math.rad(90))
+end
 
 local function BuildCrosshair()
     DestroyCrosshair()
@@ -347,7 +419,9 @@ local function loadSavedTargets()
     if not ok or type(data) ~= "table" or #data == 0 then targetLabels = {"No saved buttons"}; return end
     for index, target in ipairs(data) do
         if type(target.path) == "table" and type(target.fingerprint) == "string" then
-            target.label = (target.name or target.path[#target.path] or "Button") .. " #" .. index
+            local fingerprintState = target.fingerprint == "NO_IMAGE" and "NO IMG" or "IMG"
+            target.label = (target.name or target.path[#target.path] or "Button")
+                .. " #" .. index .. " [" .. fingerprintState .. "]"
             table.insert(savedTargets, target)
             table.insert(targetLabels, target.label)
         end
@@ -360,6 +434,40 @@ local function selectedRuntimeTarget()
     for _, target in ipairs(_G.YukiButtonDetectorGetTargets()) do
         if target.key == selectedTarget.key then return target end
     end
+end
+
+local function UpdateStatus()
+    if Cfg.AutoParry then
+        local dagger = LP.Character and LP.Character:FindFirstChild("Parrying Dagger")
+            or LP.Backpack:FindFirstChild("Parrying Dagger")
+        ParryStatus.Text = dagger and ("AUTO PARRY: ON - READY | %d STUDS"):format(Cfg.ParryRange)
+            or "AUTO PARRY: ON - WAITING FOR DAGGER"
+        ParryStatus.TextColor3 = dagger and Color3.fromRGB(85, 255, 160) or Color3.fromRGB(255, 205, 90)
+    else
+        ParryStatus.Text = "AUTO PARRY: OFF"
+        ParryStatus.TextColor3 = Color3.fromRGB(255, 95, 105)
+    end
+
+    if not Cfg.AutoSkillCheck then
+        SkillStatus.Text = "SKILL REPLAY: OFF"
+        SkillStatus.TextColor3 = Color3.fromRGB(255, 95, 105)
+        return
+    end
+    local runtimeTarget = selectedRuntimeTarget()
+    if not selectedTarget then
+        SkillStatus.Text = "SKILL REPLAY: ON - RECORD BUTTON"
+    elseif type(_G.YukiButtonDetectorGetTargets) ~= "function" then
+        SkillStatus.Text = "SKILL REPLAY: ON - OPEN RECORDER"
+    elseif not runtimeTarget then
+        SkillStatus.Text = "SKILL REPLAY: ON - FINGERPRINT MISMATCH"
+    elseif not calibrationOffset then
+        SkillStatus.Text = "SKILL REPLAY: ON - CALIBRATE"
+    else
+        local imageState = selectedTarget.fingerprint == "NO_IMAGE" and "NO IMG" or "IMG READY"
+        SkillStatus.Text = "SKILL REPLAY: ON - READY | " .. imageState
+    end
+    SkillStatus.TextColor3 = runtimeTarget and calibrationOffset and Color3.fromRGB(85, 255, 160)
+        or Color3.fromRGB(255, 205, 90)
 end
 
 local function findSkillGui()
@@ -389,6 +497,8 @@ local skillGui, previousRotation, previousError
 local angularVelocity = 0
 local clickedPrompt = false
 regConn(RunService.RenderStepped:Connect(function(dt)
+    UpdateParryRadius()
+    UpdateStatus()
     local target = selectedRuntimeTarget()
     if not Cfg.AutoSkillCheck or not target or not calibrationOffset then
         skillGui, previousRotation, previousError = nil, nil, nil
@@ -562,7 +672,18 @@ generator:Slider({Title = "Input Lead", Desc = "Click latency compensation in mi
 
 local combat = Tabs.Combat:Section({Title = "Auto Parry"})
 combat:Toggle({Title = "Enable", Desc = "Requires Parrying Dagger", Default = Cfg.AutoParry,
-    Callback = function(value) Cfg.AutoParry = value end,
+    Callback = function(value)
+        Cfg.AutoParry = value
+        if not value then DestroyParryRadius() end
+        UpdateStatus()
+    end,
+})
+combat:Space()
+combat:Toggle({Title = "Show Parry Radius", Desc = "Circle under your character", Default = Cfg.ShowParryRadius,
+    Callback = function(value)
+        Cfg.ShowParryRadius = value
+        if not value then DestroyParryRadius() end
+    end,
 })
 combat:Space()
 combat:Toggle({Title = "Auto Equip Dagger", Default = Cfg.AutoEquip, Callback = function(value)
@@ -571,7 +692,7 @@ end})
 combat:Space()
 combat:Slider({Title = "Parry Range", Width = 200,
     Value = {Min = 5, Max = 40, Default = Cfg.ParryRange}, Step = 1,
-    Callback = function(value) Cfg.ParryRange = value end,
+    Callback = function(value) Cfg.ParryRange = value; UpdateStatus() end,
 })
 combat:Space()
 combat:Slider({Title = "Parry Cooldown", Width = 200,
