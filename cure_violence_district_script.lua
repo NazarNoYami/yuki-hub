@@ -1,304 +1,521 @@
---[[
-    ╔═══════════════════════════════════════════════════╗
-    ║   [CURE] Violence District — Native UI            ║
-    ║   Auto Parry | Auto Gen | ESP | Crosshair         ║
-    ╚═══════════════════════════════════════════════════╝
---]]
+-- [CURE] Violence District - WindUI edition
+-- Features preserved from hadiprasetiyo/violence-district-script.
 
 if _G.VD_Cleanup then pcall(_G.VD_Cleanup) end
 
-local Connections = {}
-local Cleanups = {}
-_G.VD_Cleanup = function()
-    for _, conn in ipairs(Connections) do
-        if conn and conn.Disconnect then pcall(function() conn:Disconnect() end) end
-    end
-    for _, c in ipairs(Cleanups) do pcall(c) end
+local Connections, Cleanups = {}, {}
+local Running = true
+local function regConn(connection)
+    table.insert(Connections, connection)
+    return connection
 end
 
-local function regConn(conn) table.insert(Connections, conn); return conn end
+_G.VD_Cleanup = function()
+    Running = false
+    for _, connection in ipairs(Connections) do
+        pcall(function() connection:Disconnect() end)
+    end
+    for i = #Cleanups, 1, -1 do pcall(Cleanups[i]) end
+end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local Lighting = game:GetService("Lighting")
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 
--- ── Remotes (non-blocking) ──
-local Remotes, GenRemotes, SkillCheckEvent, SkillCheckResult, ParryEvent, BasicAttack
-local KingScourgeStart, KingScourgeHit
-pcall(function()
-    Remotes = ReplicatedStorage:FindFirstChild("Remotes")
-    if not Remotes then return end
-    local gen = Remotes:FindFirstChild("Generator")
-    SkillCheckEvent = gen and gen:FindFirstChild("SkillCheckEvent")
-    SkillCheckResult = gen and gen:FindFirstChild("SkillCheckResultEvent")
-    local kp = Remotes:FindFirstChild("KillerPerks")
-    local ks = kp and kp:FindFirstChild("kingscourge")
-    KingScourgeStart = ks and ks:FindFirstChild("KingScourgeStart")
-    KingScourgeHit = ks and ks:FindFirstChild("KingScourgeHit")
-    local items = Remotes:FindFirstChild("Items")
-    local df = items and items:FindFirstChild("Parrying Dagger")
-    ParryEvent = df and df:FindFirstChild("parry")
-    local atk = Remotes:FindFirstChild("Attacks")
-    BasicAttack = atk and atk:FindFirstChild("BasicAttack")
-end)
+local Remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
+local function waitRemote(parent, name)
+    return parent and parent:WaitForChild(name, 5)
+end
 
--- ── Config ──
+local GenRemotes = waitRemote(Remotes, "Generator")
+local SkillCheckEvent = waitRemote(GenRemotes, "SkillCheckEvent")
+local SkillCheckResult = waitRemote(GenRemotes, "SkillCheckResultEvent")
+local KPRemotes = Remotes and Remotes:FindFirstChild("KillerPerks")
+local KSRemotes = KPRemotes and KPRemotes:FindFirstChild("kingscourge")
+local KingScourgeStart = KSRemotes and KSRemotes:FindFirstChild("KingScourgeStart")
+local KingScourgeHit = KSRemotes and KSRemotes:FindFirstChild("KingScourgeHit")
+local ItemRemotes = waitRemote(Remotes, "Items")
+local DaggerFolder = ItemRemotes and ItemRemotes:FindFirstChild("Parrying Dagger")
+local ParryEvent = DaggerFolder and DaggerFolder:FindFirstChild("parry")
+
 local Cfg = {
-    ESP_Killer = true, ESP_Survivor = true, ESP_Spectator = false, ESP_Generator = true,
-    ESP_Names = true, ESP_Distance = true, ESP_Highlight = true,
-    AutoParry = false, ParryRange = 18, AutoEquip = true, ParryCooldown = 1.0,
-    AutoPerfectGen = true, GenDelayMin = 0.15, GenDelayMax = 0.35,
-    Crosshair = true, CHColor = Color3.fromRGB(0, 220, 255), CHSize = 10, CHGap = 5, CHThick = 2,
+    ESP_Enabled = true,
+    ESP_Killer = true,
+    ESP_Survivor = true,
+    ESP_Spectator = false,
+    ESP_Generator = true,
+    ESP_Names = true,
+    ESP_Distance = true,
+    ESP_Highlight = true,
+    AutoParry = false,
+    ParryRange = 18,
+    AutoEquip = true,
+    ParryCooldown = 1,
+    AutoPerfectGen = true,
+    GenDelayMin = 0.15,
+    GenDelayMax = 0.35,
+    Crosshair = true,
+    CHColor = Color3.fromRGB(0, 220, 255),
+    CHSize = 10,
+    CHGap = 5,
+    CHThick = 2,
 }
 
--- ── Crosshair ──
 local CrosshairGui
-local function DestroyCrosshair() if CrosshairGui and CrosshairGui.Parent then CrosshairGui:Destroy(); CrosshairGui = nil end end
+local function DestroyCrosshair()
+    if CrosshairGui then pcall(function() CrosshairGui:Destroy() end); CrosshairGui = nil end
+end
 table.insert(Cleanups, DestroyCrosshair)
+
 local function BuildCrosshair()
     DestroyCrosshair()
     if not Cfg.Crosshair then return end
+
     local gui = Instance.new("ScreenGui")
-    gui.Name = "VD_Crosshair"; gui.ResetOnSpawn = false; gui.DisplayOrder = 999; gui.Parent = CoreGui
+    gui.Name = "VD_Crosshair"
+    gui.ResetOnSpawn = false
+    gui.DisplayOrder = 999
+    gui.IgnoreGuiInset = true
+    pcall(function() gui.Parent = CoreGui end)
+    if not gui.Parent then gui.Parent = PG end
     CrosshairGui = gui
+
     local function bar(sx, sy, px, py)
-        local f = Instance.new("Frame", gui)
-        f.Size = UDim2.new(0, sx, 0, sy); f.Position = UDim2.new(0.5, px, 0.5, py)
-        f.BackgroundColor3 = Cfg.CHColor; f.BorderSizePixel = 0; f.ZIndex = 10
-        local s = Instance.new("Frame", f)
-        s.Size = UDim2.new(1, 2, 1, 2); s.Position = UDim2.new(0, -1, 0, 1)
-        s.BackgroundColor3 = Color3.new(0, 0, 0); s.BorderSizePixel = 0; s.BackgroundTransparency = 0.7; s.ZIndex = 9
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.new(0, sx, 0, sy)
+        frame.Position = UDim2.new(0.5, px, 0.5, py)
+        frame.BackgroundColor3 = Cfg.CHColor
+        frame.BorderSizePixel = 0
+        frame.ZIndex = 10
+        frame.Parent = gui
+
+        local shadow = Instance.new("Frame")
+        shadow.Size = UDim2.new(1, 2, 1, 2)
+        shadow.Position = UDim2.new(0, -1, 0, 1)
+        shadow.BackgroundColor3 = Color3.new(0, 0, 0)
+        shadow.BackgroundTransparency = 0.7
+        shadow.BorderSizePixel = 0
+        shadow.ZIndex = 9
+        shadow.Parent = frame
     end
-    local sz, gap, th = Cfg.CHSize, Cfg.CHGap, Cfg.CHThick
-    bar(sz, th, -sz - gap, -th / 2); bar(sz, th, gap, -th / 2)
-    bar(th, sz, -th / 2, -sz - gap); bar(th, sz, -th / 2, gap)
-    bar(th, th, -th / 2, -th / 2)
+
+    local size, gap, thick = Cfg.CHSize, Cfg.CHGap, Cfg.CHThick
+    bar(size, thick, -size - gap, -thick / 2)
+    bar(size, thick, gap, -thick / 2)
+    bar(thick, size, -thick / 2, -size - gap)
+    bar(thick, size, -thick / 2, gap)
+    bar(thick, thick, -thick / 2, -thick / 2)
 end
 
--- ── ESP ──
 local ESPObjects = {}
-local RoleColors = {Killer = Color3.fromRGB(255, 70, 70), Survivors = Color3.fromRGB(70, 160, 255), Spectator = Color3.fromRGB(180, 180, 180), Generator = Color3.fromRGB(255, 210, 50), GenDone = Color3.fromRGB(50, 255, 100)}
+local RoleColors = {
+    Killer = Color3.fromRGB(255, 70, 70),
+    Survivors = Color3.fromRGB(70, 160, 255),
+    Spectator = Color3.fromRGB(180, 180, 180),
+    Generator = Color3.fromRGB(255, 210, 50),
+    GenDone = Color3.fromRGB(50, 255, 100),
+}
+
 local function CleanESP(model)
-    if ESPObjects[model] then
-        for _, v in ipairs(ESPObjects[model]) do pcall(function() if typeof(v) == "Instance" then v:Destroy() elseif type(v) == "userdata" and v.Disconnect then v:Disconnect() end end) end
-        ESPObjects[model] = nil
+    local objects = ESPObjects[model]
+    if not objects then return end
+    ESPObjects[model] = nil
+    for _, object in ipairs(objects) do
+        pcall(function()
+            if typeof(object) == "Instance" then object:Destroy() else object:Disconnect() end
+        end)
     end
 end
+
 local function MakeESP(model, role)
-    CleanESP(model); if not Cfg.ESP_Generator and role == "Generator" then return end
+    CleanESP(model)
+    if not Cfg.ESP_Enabled then return end
+
     local color = RoleColors[role] or Color3.new(1, 1, 1)
-    local objs = {}; ESPObjects[model] = objs
-    if Cfg.ESP_Highlight and role ~= "Generator" then
-        local hl = Instance.new("Highlight")
-        hl.Adornee = model; hl.FillColor = color; hl.FillTransparency = 0.75; hl.OutlineColor = color; hl.OutlineTransparency = 0
-        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop; hl.Parent = model; table.insert(objs, hl)
+    local objects = {}
+    ESPObjects[model] = objects
+
+    if Cfg.ESP_Highlight then
+        local highlight = Instance.new("Highlight")
+        highlight.Adornee = model
+        highlight.FillColor = color
+        highlight.FillTransparency = 0.75
+        highlight.OutlineColor = color
+        highlight.OutlineTransparency = 0
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.Parent = model
+        table.insert(objects, highlight)
     end
-    local adornee = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("RootPart") or model:FindFirstChild("HitBox") or model:FindFirstChildWhichIsA("BasePart")
-    if not adornee then return end
-    local bb = Instance.new("BillboardGui"); bb.Name = "VD_ESP"; bb.Adornee = adornee; bb.AlwaysOnTop = true
-    bb.Size = UDim2.new(0, 220, 0, 55); bb.StudsOffset = Vector3.new(0, 3.2, 0); bb.Parent = adornee; table.insert(objs, bb)
-    local bg = Instance.new("Frame", bb); bg.Size = UDim2.new(1, 0, 1, 0); bg.BackgroundColor3 = Color3.new(0, 0, 0)
-    bg.BackgroundTransparency = 0.55; bg.BorderSizePixel = 0; Instance.new("UICorner", bg).CornerRadius = UDim.new(0, 4)
-    local lbl = Instance.new("TextLabel", bg); lbl.Size = UDim2.new(1, 0, 1, 0); lbl.BackgroundTransparency = 1
-    lbl.TextColor3 = color; lbl.TextStrokeColor3 = Color3.new(0, 0, 0); lbl.TextStrokeTransparency = 0.2
-    lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 13; lbl.Text = ""
-    local conn = RunService.Heartbeat:Connect(function()
-        if not model or not model.Parent then CleanESP(model); conn:Disconnect(); return end
-        local txt = ""; local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+
+    local adornee = model:FindFirstChild("HumanoidRootPart")
+        or model:FindFirstChild("RootPart")
+        or model:FindFirstChild("HitBox")
+        or model:FindFirstChildWhichIsA("BasePart")
+    if not adornee then CleanESP(model); return end
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "VD_ESP"
+    billboard.Adornee = adornee
+    billboard.AlwaysOnTop = true
+    billboard.Size = UDim2.new(0, 220, 0, 55)
+    billboard.StudsOffset = Vector3.new(0, 3.2, 0)
+    billboard.Parent = adornee
+    table.insert(objects, billboard)
+
+    local background = Instance.new("Frame")
+    background.Size = UDim2.new(1, 0, 1, 0)
+    background.BackgroundColor3 = Color3.new(0, 0, 0)
+    background.BackgroundTransparency = 0.55
+    background.BorderSizePixel = 0
+    background.Parent = billboard
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = background
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = color
+    label.TextStrokeColor3 = Color3.new(0, 0, 0)
+    label.TextStrokeTransparency = 0.2
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 13
+    label.Parent = background
+
+    local connection
+    connection = RunService.Heartbeat:Connect(function()
+        if not model.Parent then CleanESP(model); return end
+        local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        local text = ""
         if role ~= "Generator" then
-            local p = Players:GetPlayerFromCharacter(model); local name = p and p.DisplayName or model.Name
-            if Cfg.ESP_Names then txt = ("[%s] %s"):format(role == "Survivors" and "SURVIVOR" or role:upper(), name) end
-            if Cfg.ESP_Distance and hrp then txt = txt .. ("\n%ds"):format(math.floor((adornee.Position - hrp.Position).Magnitude)) end
-            lbl.TextColor3 = color
+            local player = Players:GetPlayerFromCharacter(model)
+            if Cfg.ESP_Names then
+                local roleName = role == "Survivors" and "SURVIVOR" or role:upper()
+                text = ("[%s] %s"):format(roleName, player and player.DisplayName or model.Name)
+            end
+            if Cfg.ESP_Distance and root then
+                text = text .. ("\n%d studs"):format(math.floor((adornee.Position - root.Position).Magnitude))
+            end
         else
-            local prog = model:GetAttribute("RepairProgress") or 0; local done = model:GetAttribute("Completed")
-            local reg = model:GetAttribute("Regressing"); local repairing = (model:GetAttribute("PlayersRepairingCount") or 0) > 0
-            local c = done and RoleColors.GenDone or RoleColors.Generator
-            txt = done and "Generator DONE" or ("Generator %d%%%s%s"):format(math.floor(prog), reg and " reg" or "", repairing and " *" or "")
-            if Cfg.ESP_Distance and hrp then txt = txt .. ("\n%ds"):format(math.floor((adornee.Position - hrp.Position).Magnitude)) end
-            lbl.TextColor3 = c
-            for _, o in ipairs(objs) do if typeof(o) == "Instance" and o:IsA("Highlight") then o.FillColor = c; o.OutlineColor = c; o.FillTransparency = 0.75; o.OutlineTransparency = 0 end end
+            local progress = model:GetAttribute("RepairProgress") or 0
+            local done = model:GetAttribute("Completed")
+            local regressing = model:GetAttribute("Regressing")
+            local repairing = (model:GetAttribute("PlayersRepairingCount") or 0) > 0
+            color = done and RoleColors.GenDone or RoleColors.Generator
+            text = done and "Generator [Done]" or ("Generator [%d%%]%s%s"):format(
+                math.floor(progress), regressing and " Regressing" or "", repairing and " Repairing" or "")
+            if Cfg.ESP_Distance and root then
+                text = text .. ("\n%d studs"):format(math.floor((adornee.Position - root.Position).Magnitude))
+            end
+            for _, object in ipairs(objects) do
+                if typeof(object) == "Instance" and object:IsA("Highlight") then
+                    object.FillColor, object.OutlineColor = color, color
+                end
+            end
         end
-        lbl.Text = txt
+        label.TextColor3, label.Text = color, text
     end)
-    table.insert(objs, conn)
+    table.insert(objects, connection)
 end
+
 local function RefreshESP()
-    for m in pairs(ESPObjects) do CleanESP(m) end
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p == LP then continue end
-        local role = p.Team and p.Team.Name or ""
-        local ok = (role == "Killer" and Cfg.ESP_Killer) or (role == "Survivors" and Cfg.ESP_Survivor) or (role == "Spectator" and Cfg.ESP_Spectator)
-        if ok and p.Character then MakeESP(p.Character, role) end
+    for model in pairs(ESPObjects) do CleanESP(model) end
+    if not Cfg.ESP_Enabled then return end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LP then
+            local role = player.Team and player.Team.Name or "Unknown"
+            local enabled = role == "Killer" and Cfg.ESP_Killer
+                or role == "Survivors" and Cfg.ESP_Survivor
+                or role == "Spectator" and Cfg.ESP_Spectator
+            if enabled and player.Character then MakeESP(player.Character, role) end
+        end
     end
     if Cfg.ESP_Generator then
-        local gens = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Generators")
-        if gens then for _, g in ipairs(gens:GetChildren()) do if g.Name == "Generator" then MakeESP(g, "Generator") end end end
+        local map = workspace:FindFirstChild("Map")
+        local generators = map and map:FindFirstChild("Generators")
+        if generators then
+            for _, generator in ipairs(generators:GetChildren()) do
+                if generator.Name == "Generator" then MakeESP(generator, "Generator") end
+            end
+        end
     end
 end
-local function CleanAllESPObjects() for m in pairs(ESPObjects) do CleanESP(m) end end
-table.insert(Cleanups, CleanAllESPObjects)
-regConn(Players.PlayerAdded:Connect(function(p) regConn(p.CharacterAdded:Connect(function() task.wait(1); RefreshESP() end)) end))
-for _, p in ipairs(Players:GetPlayers()) do if p ~= LP then regConn(p.CharacterAdded:Connect(function() task.wait(1); RefreshESP() end)) end end
-regConn(Players.PlayerRemoving:Connect(function(p) if p.Character then CleanESP(p.Character) end end))
-task.spawn(function() while true do task.wait(5)
-    if not Cfg.ESP_Generator then continue end
-    local gens = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Generators")
-    if gens then for _, g in ipairs(gens:GetChildren()) do if g.Name == "Generator" and not ESPObjects[g] then MakeESP(g, "Generator") end end end
-end end)
-regConn(LP.CharacterAdded:Connect(function() task.wait(2); RefreshESP() end))
 
--- ── Auto Parry ──
+table.insert(Cleanups, function()
+    for model in pairs(ESPObjects) do CleanESP(model) end
+end)
+
+local function watchPlayer(player)
+    regConn(player.CharacterAdded:Connect(function()
+        task.wait(1)
+        if Running then RefreshESP() end
+    end))
+end
+for _, player in ipairs(Players:GetPlayers()) do if player ~= LP then watchPlayer(player) end end
+regConn(Players.PlayerAdded:Connect(watchPlayer))
+regConn(Players.PlayerRemoving:Connect(function(player)
+    if player.Character then CleanESP(player.Character) end
+end))
+regConn(LP.CharacterAdded:Connect(function()
+    task.wait(2)
+    if Running then RefreshESP() end
+end))
+task.spawn(function()
+    while Running do
+        task.wait(5)
+        if Cfg.ESP_Enabled and Cfg.ESP_Generator then
+            local map = workspace:FindFirstChild("Map")
+            local generators = map and map:FindFirstChild("Generators")
+            if generators then
+                for _, generator in ipairs(generators:GetChildren()) do
+                    if generator.Name == "Generator" and not ESPObjects[generator] then
+                        MakeESP(generator, "Generator")
+                    end
+                end
+            end
+        end
+    end
+end)
+
 local parryCD = false
 local function TryParry()
     if not Cfg.AutoParry or parryCD or not LP.Character then return end
     local dagger = LP.Character:FindFirstChild("Parrying Dagger") or LP.Backpack:FindFirstChild("Parrying Dagger")
     if not dagger then return end
     if Cfg.AutoEquip and dagger.Parent == LP.Backpack then
-        local hum = LP.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum:EquipTool(dagger); task.wait(0.1) end
+        local humanoid = LP.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid:EquipTool(dagger); task.wait(0.1) end
     end
-    if not LP.Character:FindFirstChild("Parrying Dagger") then return end
-    if ParryEvent then parryCD = true; ParryEvent:FireServer(); task.delay(Cfg.ParryCooldown, function() parryCD = false end) end
+    if not LP.Character:FindFirstChild("Parrying Dagger") or not ParryEvent then return end
+    parryCD = true
+    ParryEvent:FireServer()
+    task.delay(Cfg.ParryCooldown, function() parryCD = false end)
 end
-local function WatchKillerAnimations(killerChar)
-    local hum = killerChar:FindFirstChild("Humanoid"); local anim = hum and hum:FindFirstChild("Animator")
-    if not anim then return end
-    regConn(anim.AnimationPlayed:Connect(function()
+
+local WatchedKillers = setmetatable({}, {__mode = "k"})
+local function WatchKillerAnimations(character)
+    if WatchedKillers[character] then return end
+    local humanoid = character:WaitForChild("Humanoid", 5)
+    local animator = humanoid and humanoid:WaitForChild("Animator", 5)
+    if not animator then return end
+    WatchedKillers[character] = true
+    regConn(animator.AnimationPlayed:Connect(function()
         if not Cfg.AutoParry or not LP.Character then return end
-        local hrp = LP.Character:FindFirstChild("HumanoidRootPart"); local khrp = killerChar:FindFirstChild("HumanoidRootPart")
-        if not hrp or not khrp then return end
-        if (hrp.Position - khrp.Position).Magnitude <= Cfg.ParryRange then TryParry() end
+        local root = LP.Character:FindFirstChild("HumanoidRootPart")
+        local killerRoot = character:FindFirstChild("HumanoidRootPart")
+        if root and killerRoot and (root.Position - killerRoot.Position).Magnitude <= Cfg.ParryRange then TryParry() end
     end))
 end
-local function SetupAutoParry()
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LP then
-            local r = p.Team and p.Team.Name or ""
-            if r == "Killer" and p.Character then WatchKillerAnimations(p.Character) end
-            regConn(p.CharacterAdded:Connect(function() task.wait(0.5); if p.Team and p.Team.Name == "Killer" then WatchKillerAnimations(p.Character) end end))
-        end
-    end
-    regConn(Players.PlayerAdded:Connect(function(p) regConn(p.CharacterAdded:Connect(function() task.wait(0.5); if p.Team and p.Team.Name == "Killer" then WatchKillerAnimations(p.Character) end end)) end))
-end
 
--- ── Auto Perfect Generator ──
-local genWaiting = false
+local function SetupAutoParryPlayer(player)
+    if player == LP then return end
+    if player.Team and player.Team.Name == "Killer" and player.Character then
+        WatchKillerAnimations(player.Character)
+    end
+    regConn(player.CharacterAdded:Connect(function(character)
+        task.wait(0.5)
+        if Running and player.Team and player.Team.Name == "Killer" then WatchKillerAnimations(character) end
+    end))
+end
+for _, player in ipairs(Players:GetPlayers()) do SetupAutoParryPlayer(player) end
+regConn(Players.PlayerAdded:Connect(SetupAutoParryPlayer))
+
+local genWaiting, ksWaiting = false, false
 if SkillCheckEvent then regConn(SkillCheckEvent.OnClientEvent:Connect(function() genWaiting = true end)) end
-local ksWaiting = false
-if KingScourgeStart then regConn(KingScourgeStart.OnClientEvent:Connect(function(p1, p2) ksWaiting = true end)) end
-local gCheck, gLine, gGoal, gLastVis, gSection = nil, nil, nil, false
-task.spawn(function()
-    while true do task.wait(0.3)
-        gCheck = gCheck or PG:FindFirstChild("SkillCheckPromptGui")
-        if gCheck then
-            gLine = gLine or gCheck:FindFirstChild("Line", true); gGoal = gGoal or gCheck:FindFirstChild("Goal", true)
-        end
-        if not gCheck or not gCheck.Parent then gCheck = nil; gLine = nil; gGoal = nil; task.wait(0.5); continue end
-        local vis = gCheck.Visible and gCheck.Enabled
-        if vis and not gLastVis and (genWaiting or ksWaiting) then
-            genWaiting = false; ksWaiting = false
-            local d = Cfg.GenDelayMin + math.random() * (Cfg.GenDelayMax - Cfg.GenDelayMin)
-            task.delay(d, function()
-                if not Cfg.AutoPerfectGen or not LP.Character then return end
-                local ci = LP.Character:FindFirstChild("CheckInterractable")
-                if not ci or not ci:GetAttribute("isRepairing") then return end
-                gLine.Rotation = 109 + gGoal.Rotation
-                pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game) end)
+if KingScourgeStart then regConn(KingScourgeStart.OnClientEvent:Connect(function() ksWaiting = true end)) end
+
+local function setupSkillCheck(source)
+    local skillGui = PG:WaitForChild("SkillCheckPromptGui", 5)
+    local check = skillGui and skillGui:WaitForChild("Check", 5)
+    local line = check and check:WaitForChild("Line", 5)
+    local goal = check and check:WaitForChild("Goal", 5)
+    if not check or not line or not goal then return end
+    local lastVisible = false
+    regConn(RunService.Heartbeat:Connect(function()
+        local visible = check.Visible
+        local waiting = source == "generator" and genWaiting or ksWaiting
+        if Cfg.AutoPerfectGen and visible and not lastVisible and waiting then
+            if source == "generator" then genWaiting = false else ksWaiting = false end
+            local minimum, maximum = Cfg.GenDelayMin, Cfg.GenDelayMax
+            local delayTime = minimum + math.random() * (math.max(minimum, maximum) - minimum)
+            task.delay(delayTime, function()
+                if not Running or not Cfg.AutoPerfectGen or not LP.Character or not check.Visible then return end
+                local interactable = LP.Character:FindFirstChild("CheckInterractable")
+                if not interactable or not interactable:GetAttribute("isRepairing") then return end
+                line.Rotation = 109 + goal.Rotation
+                pcall(function()
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+                    task.wait(0.05)
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+                end)
             end)
         end
-        gLastVis = vis
-    end
-end)
+        lastVisible = visible
+    end))
+end
+setupSkillCheck("generator")
+setupSkillCheck("kingscourge")
 
--- ── Metamethod Hook (Synapse only) ──
 if type(hookmetamethod) == "function" and type(newcclosure) == "function" and type(getnamecallmethod) == "function" then
     pcall(function()
-        local old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-            local m = getnamecallmethod(); local a = {...}
-            if m == "FireServer" and not checkcaller() then
-                if self == SkillCheckResult and Cfg.AutoPerfectGen then a[1] = "success"; a[2] = 1; return old(self, table.unpack(a))
-                elseif self == KingScourgeHit and Cfg.AutoPerfectGen then a[2] = "success"; return old(self, table.unpack(a)) end
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+            local args = {...}
+            if getnamecallmethod() == "FireServer" and not checkcaller() and Running and Cfg.AutoPerfectGen then
+                if self == SkillCheckResult then
+                    args[1], args[2] = "success", 1
+                    return oldNamecall(self, table.unpack(args))
+                elseif self == KingScourgeHit then
+                    args[2] = "success"
+                    return oldNamecall(self, table.unpack(args))
+                end
             end
-            return old(self, ...)
+            return oldNamecall(self, ...)
         end))
     end)
 end
 
--- ── UI (Native compact, draggable) ──
-local UIScreen = Instance.new("ScreenGui")
-UIScreen.Name = "CURE_UI"; UIScreen.ResetOnSpawn = false; UIScreen.DisplayOrder = 999999; UIScreen.Parent = CoreGui
-table.insert(Cleanups, function() if UIScreen and UIScreen.Parent then UIScreen:Destroy() end end)
+local WINDUI_COMMIT = "7b1d561cf658da1f2f49e700cf52963e7bdcb23a"
+local WindUIURL = "https://raw.githubusercontent.com/Footagesus/WindUI/" .. WINDUI_COMMIT .. "/dist/main.lua"
+local WindUI = loadstring(game:HttpGet(WindUIURL))()
+local Window = WindUI:CreateWindow({
+    Title = "[CURE] Violence District",
+    Folder = "CUREViolenceDistrict",
+    Icon = "solar:shield-bold-duotone",
+    NewElements = true,
+    HideSearchBar = true,
+    Topbar = {Height = 42, ButtonsType = "Default"},
+})
+table.insert(Cleanups, function() pcall(function() Window:Destroy() end) end)
 
-local UIPanel = Instance.new("Frame")
-UIPanel.Size = UDim2.new(0, 240, 0, 310); UIPanel.Position = UDim2.new(0.5, -120, 0.5, -155)
-UIPanel.BackgroundColor3 = Color3.fromRGB(15, 18, 28); UIPanel.BackgroundTransparency = 0.06; UIPanel.BorderSizePixel = 0
-UIPanel.Active = true; UIPanel.Draggable = true; UIPanel.Parent = UIScreen
-Instance.new("UICorner", UIPanel).CornerRadius = UDim.new(0, 10)
-local UIStroke = Instance.new("UIStroke", UIPanel); UIStroke.Color = Color3.fromRGB(255, 80, 90); UIStroke.Transparency = 0.3
-
-local UITitle = Instance.new("TextLabel")
-UITitle.Position = UDim2.new(0, 10, 0, 4); UITitle.Size = UDim2.new(1, -42, 0, 26)
-UITitle.BackgroundTransparency = 1; UITitle.Font = Enum.Font.SourceSansBold; UITitle.TextSize = 16
-UITitle.TextColor3 = Color3.fromRGB(255, 200, 210); UITitle.TextXAlignment = Enum.TextXAlignment.Left
-UITitle.Text = "CURE Violence District"; UITitle.Parent = UIPanel
-
-local UIStatus = Instance.new("TextLabel")
-UIStatus.Position = UDim2.new(0, 10, 0, 34); UIStatus.Size = UDim2.new(1, -20, 0, 24)
-UIStatus.BackgroundColor3 = Color3.fromRGB(25, 29, 42); UIStatus.BorderSizePixel = 0
-UIStatus.Font = Enum.Font.SourceSans; UIStatus.TextSize = 12; UIStatus.TextColor3 = Color3.fromRGB(180, 190, 220)
-UIStatus.Text = "CURE loaded. Parry:OFF Gen:ON"; UIStatus.Parent = UIPanel
-Instance.new("UICorner", UIStatus).CornerRadius = UDim.new(0, 6)
-
-local function mkBtn(t, y, c)
-    local b = Instance.new("TextButton")
-    b.Position = UDim2.new(0, 10, 0, y); b.Size = UDim2.new(1, -20, 0, 28)
-    b.BackgroundColor3 = c or Color3.fromRGB(50, 56, 76); b.BorderSizePixel = 0
-    b.Font = Enum.Font.SourceSansSemibold; b.TextSize = 13; b.TextColor3 = Color3.fromRGB(230, 235, 250)
-    b.Text = t; b.Parent = UIPanel; Instance.new("UICorner", b).CornerRadius = UDim.new(0, 7); return b
+local function tab(title, icon)
+    return Window:Tab({Title = title, Icon = icon, IconColor = Color3.fromHex("#8EA8FF"), Border = true})
 end
-local function setT(b, on) b.BackgroundColor3 = on and Color3.fromRGB(45, 135, 105) or Color3.fromRGB(50, 56, 76) end
+local Tabs = {
+    Main = tab("Main", "solar:home-2-bold-duotone"),
+    ESP = tab("ESP", "solar:eye-bold-duotone"),
+    Generator = tab("Generator", "solar:cpu-bold-duotone"),
+    Combat = tab("Combat", "solar:sword-bold-duotone"),
+    Crosshair = tab("Crosshair", "solar:target-bold-duotone"),
+}
 
-local parryBtn = mkBtn("Auto Parry: OFF", 64)
-local rangeBtn = mkBtn("Range: 18", 96, Color3.fromRGB(40, 50, 68))
-local genBtn = mkBtn("Auto Gen: ON", 128)
-local espBtn = mkBtn("ESP", 160, Color3.fromRGB(40, 50, 68))
-local crossBtn = mkBtn("Crosshair: ON", 192)
-local refreshBtn = mkBtn("Refresh ESP", 224, Color3.fromRGB(55, 80, 120))
-local parryManual = mkBtn("Manual Parry", 256, Color3.fromRGB(120, 50, 50))
+local main = Tabs.Main:Section({Title = "CURE"})
+main:Button({Title = "Refresh ESP", Desc = "Re-scan players and generators", Callback = RefreshESP})
+main:Space()
+main:Button({Title = "Rebuild Crosshair", Desc = "Apply current crosshair settings", Callback = BuildCrosshair})
+main:Space()
+main:Button({Title = "Unload", Color = Color3.fromRGB(255, 90, 105), Callback = function()
+    _G.VD_Cleanup()
+    _G.VD_Cleanup = nil
+end})
 
-local function syncStatus()
-    local parts = {}
-    table.insert(parts, "Parry:" .. (Cfg.AutoParry and "ON" or "OFF"))
-    table.insert(parts, "Gen:" .. (Cfg.AutoPerfectGen and "ON" or "OFF"))
-    UIStatus.Text = "CURE | " .. table.concat(parts, " ")
-end
+local esp = Tabs.ESP:Section({Title = "ESP"})
+esp:Toggle({Title = "Enable ESP", Default = Cfg.ESP_Enabled, Callback = function(value)
+    Cfg.ESP_Enabled = value
+    RefreshESP()
+end})
+esp:Space()
+esp:Toggle({Title = "Show Killers", Default = Cfg.ESP_Killer, Callback = function(value)
+    Cfg.ESP_Killer = value
+    RefreshESP()
+end})
+esp:Space()
+esp:Toggle({Title = "Show Survivors", Default = Cfg.ESP_Survivor, Callback = function(value)
+    Cfg.ESP_Survivor = value
+    RefreshESP()
+end})
+esp:Space()
+esp:Toggle({Title = "Show Spectators", Default = Cfg.ESP_Spectator, Callback = function(value)
+    Cfg.ESP_Spectator = value
+    RefreshESP()
+end})
+esp:Space()
+esp:Toggle({Title = "Show Generators", Desc = "Includes progress and state", Default = Cfg.ESP_Generator,
+    Callback = function(value)
+        Cfg.ESP_Generator = value
+        RefreshESP()
+    end,
+})
+esp:Space()
+esp:Toggle({Title = "Show Names and Roles", Default = Cfg.ESP_Names, Callback = function(value)
+    Cfg.ESP_Names = value
+end})
+esp:Space()
+esp:Toggle({Title = "Show Distance", Default = Cfg.ESP_Distance, Callback = function(value)
+    Cfg.ESP_Distance = value
+end})
+esp:Space()
+esp:Toggle({Title = "Highlight", Desc = "Always-on-top chams", Default = Cfg.ESP_Highlight,
+    Callback = function(value)
+        Cfg.ESP_Highlight = value
+        RefreshESP()
+    end,
+})
 
-parryBtn.MouseButton1Click:Connect(function()
-    Cfg.AutoParry = not Cfg.AutoParry
-    parryBtn.Text = "Auto Parry: " .. (Cfg.AutoParry and "ON" or "OFF")
-    setT(parryBtn, Cfg.AutoParry); syncStatus()
-end)
-genBtn.MouseButton1Click:Connect(function()
-    Cfg.AutoPerfectGen = not Cfg.AutoPerfectGen
-    genBtn.Text = "Auto Gen: " .. (Cfg.AutoPerfectGen and "ON" or "OFF")
-    setT(genBtn, Cfg.AutoPerfectGen); syncStatus()
-end)
-crossBtn.MouseButton1Click:Connect(function()
-    Cfg.Crosshair = not Cfg.Crosshair
-    crossBtn.Text = "Crosshair: " .. (Cfg.Crosshair and "ON" or "OFF")
-    setT(crossBtn, Cfg.Crosshair); BuildCrosshair()
-end)
-local ranges = {12, 15, 18, 21, 24, 27, 30}; local ri = 3
-rangeBtn.MouseButton1Click:Connect(function()
-    ri = ri % #ranges + 1; Cfg.ParryRange = ranges[ri]
-    rangeBtn.Text = "Range: " .. Cfg.ParryRange
-end)
-refreshBtn.MouseButton1Click:Connect(RefreshESP)
-parryManual.MouseButton1Click:Connect(function() if ParryEvent then ParryEvent:FireServer() end end)
+local generator = Tabs.Generator:Section({Title = "Auto Perfect Generator"})
+generator:Toggle({Title = "Enable", Desc = "Rotation snap, Space input, and remote failsafe",
+    Default = Cfg.AutoPerfectGen,
+    Callback = function(value) Cfg.AutoPerfectGen = value end,
+})
+generator:Space()
+generator:Slider({Title = "Minimum Delay", Desc = "Humanized delay in seconds", Width = 200,
+    Value = {Min = 0.05, Max = 1, Default = Cfg.GenDelayMin}, Step = 0.01,
+    Callback = function(value) Cfg.GenDelayMin = value end,
+})
+generator:Space()
+generator:Slider({Title = "Maximum Delay", Desc = "Humanized delay in seconds", Width = 200,
+    Value = {Min = 0.1, Max = 1.5, Default = Cfg.GenDelayMax}, Step = 0.01,
+    Callback = function(value) Cfg.GenDelayMax = value end,
+})
+
+local combat = Tabs.Combat:Section({Title = "Auto Parry"})
+combat:Toggle({Title = "Enable", Desc = "Requires Parrying Dagger", Default = Cfg.AutoParry,
+    Callback = function(value) Cfg.AutoParry = value end,
+})
+combat:Space()
+combat:Toggle({Title = "Auto Equip Dagger", Default = Cfg.AutoEquip, Callback = function(value)
+    Cfg.AutoEquip = value
+end})
+combat:Space()
+combat:Slider({Title = "Parry Range", Width = 200,
+    Value = {Min = 5, Max = 40, Default = Cfg.ParryRange}, Step = 1,
+    Callback = function(value) Cfg.ParryRange = value end,
+})
+combat:Space()
+combat:Slider({Title = "Parry Cooldown", Width = 200,
+    Value = {Min = 0.5, Max = 5, Default = Cfg.ParryCooldown}, Step = 0.1,
+    Callback = function(value) Cfg.ParryCooldown = value end,
+})
+combat:Space()
+combat:Button({Title = "Manual Parry", Callback = function() if ParryEvent then ParryEvent:FireServer() end end})
+
+local crosshair = Tabs.Crosshair:Section({Title = "Crosshair"})
+crosshair:Toggle({Title = "Enable", Default = Cfg.Crosshair, Callback = function(value)
+    Cfg.Crosshair = value
+    BuildCrosshair()
+end})
+crosshair:Space()
+crosshair:Slider({Title = "Size", Width = 200, Value = {Min = 4, Max = 30, Default = Cfg.CHSize}, Step = 1,
+    Callback = function(value) Cfg.CHSize = value; BuildCrosshair() end,
+})
+crosshair:Space()
+crosshair:Slider({Title = "Gap", Width = 200, Value = {Min = 0, Max = 20, Default = Cfg.CHGap}, Step = 1,
+    Callback = function(value) Cfg.CHGap = value; BuildCrosshair() end,
+})
+crosshair:Space()
+crosshair:Slider({Title = "Thickness", Width = 200,
+    Value = {Min = 1, Max = 6, Default = Cfg.CHThick}, Step = 1,
+    Callback = function(value) Cfg.CHThick = value; BuildCrosshair() end,
+})
+crosshair:Space()
+crosshair:Colorpicker({Title = "Color", Default = Cfg.CHColor, Callback = function(value)
+    Cfg.CHColor = value
+    BuildCrosshair()
+end})
+
+BuildCrosshair()
+RefreshESP()
