@@ -1,7 +1,7 @@
 --[[
     ╔═══════════════════════════════════════════════════╗
-    ║   [CURE] Violence District — Multi Script         ║
-    ║   WindUI | Auto Parry | Auto Gen | ESP           ║
+    ║   [CURE] Violence District — Native UI            ║
+    ║   Auto Parry | Auto Gen | ESP | Crosshair         ║
     ╚═══════════════════════════════════════════════════╝
 --]]
 
@@ -200,7 +200,7 @@ task.spawn(function()
         if gCheck then
             gLine = gLine or gCheck:FindFirstChild("Line", true); gGoal = gGoal or gCheck:FindFirstChild("Goal", true)
         end
-        if not gLine or not gGoal then task.wait(1); continue end
+        if not gCheck or not gCheck.Parent then gCheck = nil; gLine = nil; gGoal = nil; task.wait(0.5); continue end
         local vis = gCheck.Visible and gCheck.Enabled
         if vis and not gLastVis and (genWaiting or ksWaiting) then
             genWaiting = false; ksWaiting = false
@@ -231,55 +231,74 @@ if type(hookmetamethod) == "function" and type(newcclosure) == "function" and ty
     end)
 end
 
--- ── WindUI ──
-local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/7b1d561cf658da1f2f49e700cf52963e7bdcb23a/dist/main.lua"))()
-local Window = WindUI:CreateWindow({
-    Title = "[CURE] Violence District",
-    Folder = "CURE_VD",
-    Icon = "solar:skull-bold-duotone",
-    NewElements = true,
-    HideSearchBar = true,
-    Topbar = {Height = 36, ButtonsType = "Minimize"},
-})
-table.insert(Cleanups, function() pcall(function() Window:Destroy() end) end)
-local function tab(t, i) return Window:Tab({Title = t, Icon = i, IconColor = Color3.fromHex("#FF6B6B"), Border = true}) end
-local T = {Main = tab("Main", "solar:home-2-bold-duotone"), Combat = tab("Combat", "solar:target-bold-duotone"), Gen = tab("Generator", "solar:cpu-bold-duotone"), Cross = tab("Crosshair", "solar:crosshair-bold-duotone")}
+-- ── UI (Native compact, draggable) ──
+local UIScreen = Instance.new("ScreenGui")
+UIScreen.Name = "CURE_UI"; UIScreen.ResetOnSpawn = false; UIScreen.DisplayOrder = 999999; UIScreen.Parent = CoreGui
+table.insert(Cleanups, function() if UIScreen and UIScreen.Parent then UIScreen:Destroy() end end)
 
--- Main Tab
-local MS = T.Main:Section({Title = "ESP"})
-MS:Toggle({Title = "Killer", Default = Cfg.ESP_Killer, Callback = function(v) Cfg.ESP_Killer = v; RefreshESP() end}); MS:Space()
-MS:Toggle({Title = "Survivor", Default = Cfg.ESP_Survivor, Callback = function(v) Cfg.ESP_Survivor = v; RefreshESP() end}); MS:Space()
-MS:Toggle({Title = "Spectator", Default = Cfg.ESP_Spectator, Callback = function(v) Cfg.ESP_Spectator = v; RefreshESP() end}); MS:Space()
-MS:Toggle({Title = "Generator", Default = Cfg.ESP_Generator, Callback = function(v) Cfg.ESP_Generator = v; RefreshESP() end}); MS:Space()
-MS:Toggle({Title = "Names", Default = Cfg.ESP_Names, Callback = function(v) Cfg.ESP_Names = v end}); MS:Space()
-MS:Toggle({Title = "Distance", Default = Cfg.ESP_Distance, Callback = function(v) Cfg.ESP_Distance = v end}); MS:Space()
-MS:Toggle({Title = "Highlight", Default = Cfg.ESP_Highlight, Callback = function(v) Cfg.ESP_Highlight = v; RefreshESP() end}); MS:Space()
-MS:Button({Title = "Refresh ESP", Callback = RefreshESP})
+local UIPanel = Instance.new("Frame")
+UIPanel.Size = UDim2.new(0, 240, 0, 310); UIPanel.Position = UDim2.new(0.5, -120, 0.5, -155)
+UIPanel.BackgroundColor3 = Color3.fromRGB(15, 18, 28); UIPanel.BackgroundTransparency = 0.06; UIPanel.BorderSizePixel = 0
+UIPanel.Active = true; UIPanel.Draggable = true; UIPanel.Parent = UIScreen
+Instance.new("UICorner", UIPanel).CornerRadius = UDim.new(0, 10)
+local UIStroke = Instance.new("UIStroke", UIPanel); UIStroke.Color = Color3.fromRGB(255, 80, 90); UIStroke.Transparency = 0.3
 
--- Combat Tab
-local CS = T.Combat:Section({Title = "Auto Parry"})
-CS:Toggle({Title = "Enable", Default = Cfg.AutoParry, Callback = function(v) Cfg.AutoParry = v end}); CS:Space()
-CS:Toggle({Title = "Auto Equip Dagger", Default = Cfg.AutoEquip, Callback = function(v) Cfg.AutoEquip = v end}); CS:Space()
-CS:Slider({Title = "Range", Width = 200, Value = {Min = 5, Max = 40, Default = 18}, Step = 1, Callback = function(v) Cfg.ParryRange = v end}); CS:Space()
-CS:Slider({Title = "Cooldown", Width = 200, Value = {Min = 0.5, Max = 5, Default = 1}, Step = 0.1, Callback = function(v) Cfg.ParryCooldown = v end}); CS:Space()
-CS:Button({Title = "Manual Parry", Callback = function() if ParryEvent then ParryEvent:FireServer() end end})
+local UITitle = Instance.new("TextLabel")
+UITitle.Position = UDim2.new(0, 10, 0, 4); UITitle.Size = UDim2.new(1, -42, 0, 26)
+UITitle.BackgroundTransparency = 1; UITitle.Font = Enum.Font.SourceSansBold; UITitle.TextSize = 16
+UITitle.TextColor3 = Color3.fromRGB(255, 200, 210); UITitle.TextXAlignment = Enum.TextXAlignment.Left
+UITitle.Text = "CURE Violence District"; UITitle.Parent = UIPanel
 
--- Generator Tab
-local GS = T.Gen:Section({Title = "Auto Perfect Generator"})
-GS:Toggle({Title = "Enable", Default = Cfg.AutoPerfectGen, Callback = function(v) Cfg.AutoPerfectGen = v end}); GS:Space()
-GS:Slider({Title = "Min Delay", Width = 200, Value = {Min = 0.05, Max = 1, Default = 0.15}, Step = 0.05, Callback = function(v) Cfg.GenDelayMin = v end}); GS:Space()
-GS:Slider({Title = "Max Delay", Width = 200, Value = {Min = 0.1, Max = 1.5, Default = 0.35}, Step = 0.05, Callback = function(v) Cfg.GenDelayMax = v end})
+local UIStatus = Instance.new("TextLabel")
+UIStatus.Position = UDim2.new(0, 10, 0, 34); UIStatus.Size = UDim2.new(1, -20, 0, 24)
+UIStatus.BackgroundColor3 = Color3.fromRGB(25, 29, 42); UIStatus.BorderSizePixel = 0
+UIStatus.Font = Enum.Font.SourceSans; UIStatus.TextSize = 12; UIStatus.TextColor3 = Color3.fromRGB(180, 190, 220)
+UIStatus.Text = "CURE loaded. Parry:OFF Gen:ON"; UIStatus.Parent = UIPanel
+Instance.new("UICorner", UIStatus).CornerRadius = UDim.new(0, 6)
 
--- Crosshair Tab
-local XS = T.Cross:Section({Title = "Crosshair"})
-XS:Toggle({Title = "Enable", Default = Cfg.Crosshair, Callback = function(v) Cfg.Crosshair = v; BuildCrosshair() end}); XS:Space()
-XS:Slider({Title = "Size", Width = 200, Value = {Min = 4, Max = 30, Default = 10}, Step = 1, Callback = function(v) Cfg.CHSize = v; BuildCrosshair() end}); XS:Space()
-XS:Slider({Title = "Gap", Width = 200, Value = {Min = 0, Max = 20, Default = 5}, Step = 1, Callback = function(v) Cfg.CHGap = v; BuildCrosshair() end}); XS:Space()
-XS:Slider({Title = "Thickness", Width = 200, Value = {Min = 1, Max = 6, Default = 2}, Step = 1, Callback = function(v) Cfg.CHThick = v; BuildCrosshair() end})
+local function mkBtn(t, y, c)
+    local b = Instance.new("TextButton")
+    b.Position = UDim2.new(0, 10, 0, y); b.Size = UDim2.new(1, -20, 0, 28)
+    b.BackgroundColor3 = c or Color3.fromRGB(50, 56, 76); b.BorderSizePixel = 0
+    b.Font = Enum.Font.SourceSansSemibold; b.TextSize = 13; b.TextColor3 = Color3.fromRGB(230, 235, 250)
+    b.Text = t; b.Parent = UIPanel; Instance.new("UICorner", b).CornerRadius = UDim.new(0, 7); return b
+end
+local function setT(b, on) b.BackgroundColor3 = on and Color3.fromRGB(45, 135, 105) or Color3.fromRGB(50, 56, 76) end
 
--- ── Startup ──
-BuildCrosshair()
-SetupAutoParry()
-RefreshESP()
-Window:SelectTab(1)
-Window:Notify({Title = "CURE VD", Content = "Loaded. RightShift to toggle.", Duration = 3})
+local parryBtn = mkBtn("Auto Parry: OFF", 64)
+local rangeBtn = mkBtn("Range: 18", 96, Color3.fromRGB(40, 50, 68))
+local genBtn = mkBtn("Auto Gen: ON", 128)
+local espBtn = mkBtn("ESP", 160, Color3.fromRGB(40, 50, 68))
+local crossBtn = mkBtn("Crosshair: ON", 192)
+local refreshBtn = mkBtn("Refresh ESP", 224, Color3.fromRGB(55, 80, 120))
+local parryManual = mkBtn("Manual Parry", 256, Color3.fromRGB(120, 50, 50))
+
+local function syncStatus()
+    local parts = {}
+    table.insert(parts, "Parry:" .. (Cfg.AutoParry and "ON" or "OFF"))
+    table.insert(parts, "Gen:" .. (Cfg.AutoPerfectGen and "ON" or "OFF"))
+    UIStatus.Text = "CURE | " .. table.concat(parts, " ")
+end
+
+parryBtn.MouseButton1Click:Connect(function()
+    Cfg.AutoParry = not Cfg.AutoParry
+    parryBtn.Text = "Auto Parry: " .. (Cfg.AutoParry and "ON" or "OFF")
+    setT(parryBtn, Cfg.AutoParry); syncStatus()
+end)
+genBtn.MouseButton1Click:Connect(function()
+    Cfg.AutoPerfectGen = not Cfg.AutoPerfectGen
+    genBtn.Text = "Auto Gen: " .. (Cfg.AutoPerfectGen and "ON" or "OFF")
+    setT(genBtn, Cfg.AutoPerfectGen); syncStatus()
+end)
+crossBtn.MouseButton1Click:Connect(function()
+    Cfg.Crosshair = not Cfg.Crosshair
+    crossBtn.Text = "Crosshair: " .. (Cfg.Crosshair and "ON" or "OFF")
+    setT(crossBtn, Cfg.Crosshair); BuildCrosshair()
+end)
+local ranges = {12, 15, 18, 21, 24, 27, 30}; local ri = 3
+rangeBtn.MouseButton1Click:Connect(function()
+    ri = ri % #ranges + 1; Cfg.ParryRange = ranges[ri]
+    rangeBtn.Text = "Range: " .. Cfg.ParryRange
+end)
+refreshBtn.MouseButton1Click:Connect(RefreshESP)
+parryManual.MouseButton1Click:Connect(function() if ParryEvent then ParryEvent:FireServer() end end)
